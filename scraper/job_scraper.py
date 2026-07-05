@@ -337,8 +337,9 @@ def check_job_live(job: dict) -> bool:
     ATS-sourced jobs (greenhouse/lever/ashby) come straight from each
     employer's live open-positions board, so an entry existing there already
     means it's open — they're treated as live without a network call. Only
-    Adzuna's syndicated listings actually go stale between scrape and digest."""
-    if job.get("source") != "adzuna":
+    Adzuna's and LinkedIn's syndicated/crawled listings actually go stale
+    between scrape and digest."""
+    if job.get("source") not in ("adzuna", "linkedin"):
         return True
     url = job.get("apply_url", "")
     if not url:
@@ -420,6 +421,21 @@ def scrape_all_jobs(profile) -> list[dict]:
     raw = scrape_adzuna(profile)
     logger.info("Adzuna raw jobs: %d", len(raw))
 
+    # Zero-key job source — LinkedIn's public guest endpoints, no API key
+    # required. On by default so the pipeline produces real matches even
+    # with no Adzuna/ATS credentials configured at all; set
+    # ENABLE_LINKEDIN_SCRAPE=false to disable (e.g. ToS-averse deployments).
+    if os.getenv("ENABLE_LINKEDIN_SCRAPE", "true").lower() == "true":
+        from scraper.linkedin_guest_scraper import scrape_linkedin_guest
+        try:
+            linkedin_jobs = scrape_linkedin_guest(profile)
+        except Exception as exc:
+            logger.error("LinkedIn guest scraping failed: %s", exc)
+            linkedin_jobs = []
+        logger.info("LinkedIn (guest) raw jobs: %d", len(linkedin_jobs))
+    else:
+        linkedin_jobs = []
+
     # ATS company boards are a hand-picked list of specific employers'
     # Greenhouse/Lever/Ashby/Workable slugs (see scraper/ats_scraper.py) —
     # they don't generalize to an arbitrary profile's target companies, so
@@ -457,7 +473,7 @@ def scrape_all_jobs(profile) -> list[dict]:
     # while Adzuna's copy is truncated to ~500 chars and has mislabeled
     # location data before. Keeping Adzuna first would silently keep the
     # worse copy on any future overlap.
-    combined = _dedup(ats_jobs + crawl_jobs + raw)
+    combined = _dedup(ats_jobs + crawl_jobs + raw + linkedin_jobs)
 
     # The 7-day freshness window only makes sense for syndicated/crawled
     # listings (Adzuna, crawl4ai web boards): an old timestamp can mean a
@@ -491,6 +507,17 @@ def scrape_all_jobs(profile) -> list[dict]:
     for job in filtered:
         if job.get("source") == "adzuna":
             full_text = fetch_full_description(job.get("apply_url", ""))
+            job["_full_text"] = full_text
+            is_blocked = bool(full_text and _text_mentions_blocked_location(full_text, profile))
+            is_target = _is_target_location(None, job.get("location", ""), profile) and not (
+                full_text and _text_mentions_non_target(full_text, profile)
+            )
+        elif job.get("source") == "linkedin":
+            # Same lazy-fetch pattern as Adzuna: the guest search endpoint
+            # only returns title/company/location/date, not the description.
+            from scraper.linkedin_guest_scraper import fetch_job_detail
+            full_text = fetch_job_detail(job.get("_linkedin_id", "")) if job.get("_linkedin_id") else None
+            job["jd_text"] = full_text or ""
             job["_full_text"] = full_text
             is_blocked = bool(full_text and _text_mentions_blocked_location(full_text, profile))
             is_target = _is_target_location(None, job.get("location", ""), profile) and not (

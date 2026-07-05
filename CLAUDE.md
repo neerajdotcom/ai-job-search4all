@@ -22,7 +22,7 @@ to `candidate_profile/config.yaml` and fill it in by hand.
 
 ## What This Does
 Each run:
-1. Scrapes Adzuna (country from `profile.adzuna_country_code`) + optionally direct employer ATS feeds for `profile.search_terms`
+1. Scrapes LinkedIn's public guest job search (zero API key, on by default) + optionally Adzuna (country from `profile.adzuna_country_code`) + optionally direct employer ATS feeds for `profile.search_terms`
 2. Locally pre-filters by keyword overlap (free, no API calls), then scores the top candidates against the résumé
 3. Optimizes a tailored resume (a submittable **PDF** + an editable DOCX companion) for qualifying jobs, capped per run to protect free-tier quota
 4. Emails one HTML digest with the match table, per-job recommendations, and "Fast-Apply Packs" (cover note + screening Q&A)
@@ -59,9 +59,9 @@ for a fully-commented template.
   - `python -m digest.email_digest` (sends a real test email with dummy jobs, or falls back to writing `outputs/digest_preview.html` if SMTP creds are missing)
 - No automated test suite exists — verification is via `--dry-run` and the per-module `__main__` blocks above.
 
-Required env vars (see `.env.example`): `GEMINI_API_KEY`, `GROQ_API_KEY`, `ADZUNA_APP_ID`, `ADZUNA_APP_KEY`, `GMAIL_USER`, `GMAIL_APP_PASSWORD`, `DIGEST_RECIPIENT`.
+Required env vars (see `.env.example`): `GEMINI_API_KEY`, `GROQ_API_KEY`, `GMAIL_USER`, `GMAIL_APP_PASSWORD`, `DIGEST_RECIPIENT`. **`ADZUNA_APP_ID`/`ADZUNA_APP_KEY` are optional** — the pipeline scrapes real jobs with zero keys via LinkedIn's public guest search (see `scraper/CLAUDE.md`); Adzuna is an additional, higher-volume source if you have keys.
 
-Optional, off by default: `ENABLE_CRAWL4AI` (web-board scraping via headless Chromium — most boards block datacenter IPs, so this is best run from a residential IP) and `ENABLE_ATS_SCRAPING` (direct Greenhouse/Lever/Ashby/Workable feeds — the company list in `scraper/ats_scraper.py` is empty by default; populate it with your own target employers first).
+Optional, off by default: `ENABLE_CRAWL4AI` (web-board scraping via headless Chromium — most boards block datacenter IPs, so this is best run from a residential IP) and `ENABLE_ATS_SCRAPING` (direct Greenhouse/Lever/Ashby/Workable feeds — the company list in `scraper/ats_scraper.py` is empty by default; populate it with your own target employers first). On by default: `ENABLE_LINKEDIN_SCRAPE` (set to `false` to disable the zero-key LinkedIn source).
 
 ## Pipeline Architecture (orchestration overview)
 `main.py` orchestrates everything:
