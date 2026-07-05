@@ -31,8 +31,18 @@ from pathlib import Path
 
 
 def _load_profile(path: str | None):
-    from candidate_profile.loader import load_profile, EXAMPLE_PROFILE_PATH
-    return load_profile(path or str(EXAMPLE_PROFILE_PATH))
+    """Load the candidate profile. If --profile isn't passed, use the
+    loader's own default (candidate_profile/config.yaml). Only fall back
+    to the shipped example if config.yaml is missing, so a real user's
+    profile is picked up automatically."""
+    from candidate_profile.loader import (
+        DEFAULT_PROFILE_PATH, EXAMPLE_PROFILE_PATH, load_profile,
+    )
+    if path:
+        return load_profile(path)
+    if DEFAULT_PROFILE_PATH.exists():
+        return load_profile()
+    return load_profile(str(EXAMPLE_PROFILE_PATH))
 
 
 def _read_json_input(path: str | None):
