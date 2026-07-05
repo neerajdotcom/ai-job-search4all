@@ -98,6 +98,11 @@ these placeholder-y fields — same list `setup_profile.py` prints:
   guest source doesn't need it)
 - `target_companies` (companies to highlight in the digest — optional)
 - `excluded_companies` (e.g. your current employer)
+- `search_locations` (empty by default — searches only the single
+  `location` field. Add extra cities here to cast a wider net, e.g.
+  `["Kolkata, India", "Mumbai, India", "Pune, India", "Bangalore, India",
+  "Hyderabad, India"]` for a candidate open to multiple Indian metros.
+  Each entry becomes a separate LinkedIn search pass.)
 
 Tell them:
 > Draft profile written to `candidate_profile/config.yaml`. Review every

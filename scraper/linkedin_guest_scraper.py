@@ -159,30 +159,38 @@ def search_jobs(query: str, location: str, max_pages: int = _MAX_PAGES_PER_TERM)
 
 def scrape_linkedin_guest(profile) -> list[dict]:
     """Zero-key job source for scraper.job_scraper.scrape_all_jobs. Searches
-    profile.search_terms against profile.location (falling back to
-    target_location_country), dedup happens in the caller like every other
-    source. jd_text is left empty here — job_scraper.py fetches full
-    descriptions lazily, same pattern as Adzuna's fetch_full_description."""
-    location = profile.location or profile.target_location_country
+    profile.search_terms across every entry in profile.effective_search_locations
+    (which falls back to [profile.location] when the multi-city
+    `search_locations` field is empty). Dedup happens in the caller like
+    every other source. jd_text is left empty here — job_scraper.py fetches
+    full descriptions lazily, same pattern as Adzuna's fetch_full_description."""
+    locations = [
+        loc.strip() for loc in profile.effective_search_locations
+        if loc and loc.strip()
+    ] or [profile.target_location_country]
     all_jobs: list[dict] = []
     seen_ids: set[str] = set()
 
-    for term in profile.search_terms:
-        try:
-            logger.info("  Searching LinkedIn (guest): '%s' in '%s'", term, location)
-            results = search_jobs(term, location)
-        except Exception as exc:
-            logger.error("  LinkedIn guest search failed for '%s': %s", term, exc)
-            continue
-        for job in results:
-            job_id = job.get("_linkedin_id")
-            if job_id in seen_ids:
+    for location in locations:
+        for term in profile.search_terms:
+            try:
+                logger.info("  Searching LinkedIn (guest): '%s' in '%s'", term, location)
+                results = search_jobs(term, location)
+            except Exception as exc:
+                logger.error("  LinkedIn guest search failed for '%s' in '%s': %s", term, location, exc)
                 continue
-            seen_ids.add(job_id)
-            job["jd_text"] = ""  # filled in lazily by job_scraper's full-text recheck
-            all_jobs.append(job)
+            for job in results:
+                job_id = job.get("_linkedin_id")
+                if job_id in seen_ids:
+                    continue
+                seen_ids.add(job_id)
+                job["jd_text"] = ""  # filled in lazily by job_scraper's full-text recheck
+                all_jobs.append(job)
 
-    logger.info("LinkedIn (guest): fetched %d raw entries across all search terms", len(all_jobs))
+    logger.info(
+        "LinkedIn (guest): fetched %d raw entries across %d search location(s) × %d term(s)",
+        len(all_jobs), len(locations), len(profile.search_terms),
+    )
     return all_jobs
 
 

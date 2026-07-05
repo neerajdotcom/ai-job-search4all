@@ -68,6 +68,12 @@ class Profile:
     target_location_country: str       # e.g. "india" — matched against job location text
     target_location_aliases: list[str] = field(default_factory=list)  # e.g. ["remote"]
     blocked_locations: list[str] = field(default_factory=list)  # hard-excluded countries/cities
+    # Optional. Cities/regions to search job boards in — LinkedIn's guest
+    # search is per-location, so each entry becomes a separate search pass.
+    # Leave empty to fall back to searching just `location`. Example:
+    # ["Kolkata, India", "Mumbai, India", "Pune, India"] to cast a wider net
+    # for a candidate open to multiple cities within their target country.
+    search_locations: list[str] = field(default_factory=list)
 
     # --- search & scoring calibration ---
     search_terms: list[str] = field(default_factory=list)
@@ -114,6 +120,14 @@ class Profile:
         """Filesystem-safe stem for generated resume filenames."""
         return "".join(c for c in self.name if c.isalnum()) or "Candidate"
 
+    @property
+    def effective_search_locations(self) -> list[str]:
+        """List of cities/regions to search each job board in — falls back
+        to `[location]` when `search_locations` is empty, so old profiles
+        without the field still work unchanged. Scrapers iterate over this
+        list, one search per entry."""
+        return self.search_locations or [self.location]
+
 
 def _read_yaml(path: Path) -> dict:
     with open(path, encoding="utf-8") as f:
@@ -159,6 +173,7 @@ def load_profile(path: Optional[str] = None) -> Profile:
         target_location_country=raw["target_location_country"],
         target_location_aliases=raw.get("target_location_aliases", []) or [],
         blocked_locations=raw.get("blocked_locations", []) or [],
+        search_locations=raw.get("search_locations", []) or [],
         search_terms=raw.get("search_terms", []) or [],
         target_companies=raw.get("target_companies", []) or [],
         experience_exclude_years=int(raw.get("experience_exclude_years", 10)),
