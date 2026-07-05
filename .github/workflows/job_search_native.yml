@@ -41,6 +41,10 @@ jobs:
       GMAIL_USER:          ${{ secrets.GMAIL_USER }}
       GMAIL_APP_PASSWORD:  ${{ secrets.GMAIL_APP_PASSWORD }}
       DIGEST_RECIPIENT:    ${{ secrets.DIGEST_RECIPIENT }}
+      # Direct-employer ATS boards (Greenhouse/Lever/Ashby/Workable) are
+      # zero-key and on by default — hand-picked iGaming/gaming company
+      # slugs in scraper/ats_scraper.py. Set to "false" to skip them.
+      ENABLE_ATS_SCRAPING: "true"
 
     steps:
       - name: Checkout repository

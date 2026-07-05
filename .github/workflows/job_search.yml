@@ -50,11 +50,11 @@ jobs:
       # local/residential-IP runs via `ENABLE_CRAWL4AI=true python main.py`
       # (Instahyre is the one board that isn't anti-bot-walled — tune it there).
       ENABLE_CRAWL4AI:     "false"
-      # Default off: scraper/ats_scraper.py's ATS company boards (Greenhouse/
-      # Lever/Ashby/Workable) are a hand-picked list from the original template
-      # profile. Customize that file's company lists to your own target
-      # employers, then flip this to "true" — see README "Deploy your own copy".
-      ENABLE_ATS_SCRAPING: "false"
+      # ATS boards are on by default in scraper/job_scraper.py — kept as an
+      # explicit setting here so the API-mode workflow's behavior is visible
+      # at a glance. Set to "false" if you want to skip the direct-employer
+      # boards entirely (Greenhouse/Lever/Ashby/Workable).
+      ENABLE_ATS_SCRAPING: "true"
 
     steps:
       - name: Checkout repository

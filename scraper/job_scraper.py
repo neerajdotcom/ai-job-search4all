@@ -439,12 +439,14 @@ def scrape_all_jobs(profile) -> list[dict]:
     else:
         linkedin_jobs = []
 
-    # ATS company boards are a hand-picked list of specific employers'
-    # Greenhouse/Lever/Ashby/Workable slugs (see scraper/ats_scraper.py) —
-    # they don't generalize to an arbitrary profile's target companies, so
-    # this source is opt-in (default off) until you edit ats_scraper.py's
-    # company lists to your own targets. See README "Deploy your own copy".
-    if os.getenv("ENABLE_ATS_SCRAPING", "false").lower() == "true":
+    # Direct employer ATS boards (Greenhouse/Lever/Ashby/Workable public APIs)
+    # — truly zero-key, on by default in the Claude-native path. The company
+    # lists in scraper/ats_scraper.py are hand-picked (currently iGaming/
+    # gaming-focused, aligned with the original candidate profile this tool
+    # was built for) — an irrelevant industry profile just gets low-scoring
+    # jobs that the 60-point qualification gate filters out, no quota cost.
+    # Set ENABLE_ATS_SCRAPING=false to disable entirely.
+    if os.getenv("ENABLE_ATS_SCRAPING", "true").lower() == "true":
         from scraper.ats_scraper import scrape_all_ats_jobs
         try:
             ats_jobs = scrape_all_ats_jobs()

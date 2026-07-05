@@ -140,14 +140,15 @@ See `CLAUDE.md` for the full architecture — per-module docs live in nested
 - `ENABLE_LINKEDIN_SCRAPE=false` — **on by default.** Disable if you'd
   rather not scrape LinkedIn's public guest endpoints at all (personal-use
   only per their ToS; kept low-volume by design — see `scraper/CLAUDE.md`).
+- `ENABLE_ATS_SCRAPING=false` — **on by default.** Direct-employer boards
+  (Greenhouse/Lever/Ashby/Workable public APIs, zero API key). Company
+  lists in `scraper/ats_scraper.py` are hand-picked and currently
+  iGaming/gaming-focused — add your own target employers' board slugs to
+  broaden coverage for your industry.
 - `ENABLE_CRAWL4AI=true` — scrapes large job-board sites (Naukri, Indeed,
   Foundit, Instahyre, Wellfound) via headless Chromium. Most of these boards
   block datacenter IPs, so this only works reliably from a residential IP —
   run it locally, not in GitHub Actions.
-- `ENABLE_ATS_SCRAPING=true` — pulls jobs directly from specific employers'
-  Greenhouse/Lever/Ashby/Workable boards. The company lists in
-  `scraper/ats_scraper.py` are empty by default — add your own target
-  employers' board slugs before enabling.
 
 ## What stays private
 Nothing about your résumé or search leaves your own GitHub repo and your own

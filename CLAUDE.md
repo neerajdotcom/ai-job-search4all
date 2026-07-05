@@ -74,7 +74,7 @@ for a fully-commented template.
 
 Required env vars (see `.env.example`): `GEMINI_API_KEY`, `GROQ_API_KEY`, `GMAIL_USER`, `GMAIL_APP_PASSWORD`, `DIGEST_RECIPIENT`. **`ADZUNA_APP_ID`/`ADZUNA_APP_KEY` are optional** — the pipeline scrapes real jobs with zero keys via LinkedIn's public guest search (see `scraper/CLAUDE.md`); Adzuna is an additional, higher-volume source if you have keys.
 
-Optional, off by default: `ENABLE_CRAWL4AI` (web-board scraping via headless Chromium — most boards block datacenter IPs, so this is best run from a residential IP) and `ENABLE_ATS_SCRAPING` (direct Greenhouse/Lever/Ashby/Workable feeds — the company list in `scraper/ats_scraper.py` is empty by default; populate it with your own target employers first). On by default: `ENABLE_LINKEDIN_SCRAPE` (set to `false` to disable the zero-key LinkedIn source).
+Optional, off by default: `ENABLE_CRAWL4AI` (web-board scraping via headless Chromium — most boards block datacenter IPs, so this is best run from a residential IP). On by default: `ENABLE_LINKEDIN_SCRAPE` (LinkedIn's public guest job search — zero API key) and `ENABLE_ATS_SCRAPING` (direct Greenhouse/Lever/Ashby/Workable public APIs — zero API key, hand-picked company slugs in `scraper/ats_scraper.py`, currently iGaming/gaming-focused; irrelevant-industry profiles just get low-scoring results the 60-point gate filters out). Set either to `false` to disable.
 
 ## Pipeline Architecture (orchestration overview)
 `main.py` orchestrates everything:
