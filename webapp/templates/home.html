@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Home — Job Search Dashboard{% endblock %}
+{% block content %}
+<h1>Overview</h1>
+
+<div class="cards">
+  <div class="card">
+    <div class="card-value">{{ stats.total_runs }}</div>
+    <div class="card-label">Total runs</div>
+  </div>
+  <div class="card">
+    <div class="card-value">{{ stats.total_jobs_scraped }}</div>
+    <div class="card-label">Jobs scraped</div>
+  </div>
+  <div class="card">
+    <div class="card-value">{{ stats.total_jobs_qualifying }}</div>
+    <div class="card-label">Jobs qualifying (&ge;60%)</div>
+  </div>
+</div>
+
+{% if stats.total_runs == 0 %}
+<p class="empty-state">No runs yet — trigger one from the <a href="/trigger">Trigger</a> page, or wait for the next scheduled GitHub Actions run.</p>
+{% else %}
+<div class="charts">
+  <div class="chart-box">
+    <h2>Score distribution</h2>
+    <canvas id="scoreChart"></canvas>
+  </div>
+  <div class="chart-box">
+    <h2>Qualifying jobs over time</h2>
+    <canvas id="timeChart"></canvas>
+  </div>
+  <div class="chart-box">
+    <h2>Run source breakdown</h2>
+    <canvas id="sourceChart"></canvas>
+  </div>
+  <div class="chart-box">
+    <h2>Top companies (qualifying matches)</h2>
+    <canvas id="companyChart"></canvas>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  window.DASHBOARD_STATS = {{ stats | tojson }};
+</script>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    if (window.initHomeCharts) window.initHomeCharts(window.DASHBOARD_STATS);
+  });
+</script>
+{% endblock %}

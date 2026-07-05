@@ -1,0 +1,81 @@
+# Copy this file to profile/config.yaml and fill it in — or run
+#   python setup_profile.py --resume your_resume.docx
+# to have it drafted for you automatically from your resume (one free-tier
+# Gemini call). Either way, review every field before your first real run.
+
+# ---- identity (used to template every LLM prompt) ----
+name: "Jane Doe"
+title: "Product Manager"
+years_experience: 6
+
+# A short, factual paragraph the LLM can quote verbatim when answering
+# screening questions (notice period, relocation, etc.) — never invent
+# beyond what's here. Leave salary as a placeholder; the tool never states
+# a specific figure.
+context: >
+  Candidate facts (use these; do NOT invent others):
+  - Name: Jane Doe
+  - Current role: Product Manager at Example Corp (Bangalore)
+  - 6 years experience across fintech and e-commerce
+  - Notice period: 30 days
+  - Current location: Bangalore; open to relocating within India
+  - Do NOT state a specific salary figure — use the placeholder '[expected CTC]'
+
+# ---- location targeting ----
+location: "Bangalore, India"
+target_location_country: "india"       # matched against job location text
+target_location_aliases: ["remote"]    # locations that should always count as target
+blocked_locations: []                  # countries/cities to hard-exclude (e.g. visa constraints)
+
+# ---- search & scoring calibration ----
+search_terms:
+  - "Product Manager"
+  - "Senior Product Manager"
+  - "Associate Product Manager"
+  - "Product Owner"
+
+target_companies: []                   # optional — just highlights matches, never affects ranking
+
+experience_exclude_years: 10           # auto-exclude roles requiring >= this many years
+
+adjacent_industries: ["fintech", "e-commerce"]   # used in prompts + the "adjacent" industry band
+
+# Optional: override the default 3-tier industry rubric (core/adjacent/unrelated).
+# Leave unset to use the sensible generic default.
+# industry_bands:
+#   - {value: "core", label: "Core industry match", points: 35, hint: "..."}
+#   - {value: "adjacent", label: "Adjacent industry", points: 18, hint: "..."}
+#   - {value: "unrelated", label: "Unrelated industry", points: 6, hint: "..."}
+
+# Optional: override the default 3 resume-framing archetypes.
+# archetypes:
+#   process-discipline: "planning, governance, predictable on-time delivery"
+#   hands-on-execution: "day-to-day operational delivery, execution speed"
+#   cross-functional-leadership: "coordinating across teams, stakeholder alignment"
+
+# ---- resume files ----
+resume_path: "candidate_profile/sample_resume.docx"
+secondary_resume_path: null             # optional second resume for a second track
+primary_track_label: "Primary"                    # digest heading for the main resume's matches
+secondary_track_label: "Secondary Resume Match"   # digest heading when secondary_resume_path is set
+
+# ---- role/company map for DOCX bullet patching ----
+# One entry per employer whose bullets should be tailored, in the SAME order
+# they appear in your resume. Keys are arbitrary internal labels; the list of
+# keywords is used to locate that employer's heading in the DOCX (case-
+# insensitive substring match) — list more specific keywords first if two
+# employer names could overlap.
+roles:
+  example_corp: ["example corp"]
+  previous_co: ["previous company inc", "previous co"]
+  first_job: ["first employer"]
+
+# ---- writing-style preferences, folded into every optimize prompt ----
+writing_style:
+  no_spaced_dashes: true
+  capitalize_role_titles: true
+  avoid_ai_buzzwords: true
+
+# ---- misc ----
+adzuna_country_code: "in"   # Adzuna's country slug: in, gb, us, au, ca, de, fr, ... (see their docs)
+excluded_companies: []      # e.g. your current employer, so it's never suggested back to you

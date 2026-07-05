@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+{% block title %}Job detail — Job Search Dashboard{% endblock %}
+{% block content %}
+{% if job is none %}
+<h1>Job not found</h1>
+<p class="empty-state">No job at index {{ job_index }} in run <code>{{ run_id }}</code>.</p>
+{% else %}
+<p><a href="/runs/{{ run_id }}">&larr; Back to run {{ run_id }}</a></p>
+<h1>{{ job.title }} @ {{ job.company }}</h1>
+<p class="meta-line">
+  {{ job.location or "—" }}
+  &middot; <span class="badge" style="color:{{ score_color(job.match_score or 0) }};background:{{ score_bg(job.match_score or 0) }};">{{ job.match_score or 0 }}%</span>
+  {% if job.reviewer_score is not none %}&middot; Reviewer: {{ job.reviewer_score }}%{% endif %}
+  &middot; <a href="{{ job.apply_url | safe_url }}" rel="noopener noreferrer" target="_blank">Open job posting &rarr;</a>
+  {% if job.live is defined and job.live == false %}&middot; <span class="pill pill-bad">⚠ Link may be closed</span>{% endif %}
+  {% if job.target_company %}&middot; <span class="badge badge-neutral" title="On your target-company list">⭐ Target company</span>{% endif %}
+  {% if job.chosen_archetype %}&middot; Framing: <span class="badge badge-neutral">{{ job.chosen_archetype }}</span>{% endif %}
+  {% if job.optimized %}{% if job.resume_track == "secondary" %}&middot; Resume: <span class="badge badge-neutral">Secondary</span>{% else %}&middot; Resume: <span class="badge badge-neutral">Primary</span>{% endif %}{% endif %}
+</p>
+
+<h2>Application status</h2>
+<p>
+  <select id="trackerStatusSelect"
+          data-run-id="{{ run_id }}" data-job-index="{{ job_index }}">
+    {% set current = tracker_status or "new" %}
+    {% for s in tracker_statuses %}
+    <option value="{{ s }}" {% if s == current %}selected{% endif %}>{{ s | replace("_", " ") }}</option>
+    {% endfor %}
+  </select>
+  <span id="trackerStatusMsg" class="muted"></span>
+</p>
+
+<div class="qa-block">
+  <label class="meta-line">Recruiter name<br>
+    <input type="text" id="trackerRecruiterName" value="{{ tracker_recruiter_name or '' }}">
+  </label>
+  <label class="meta-line">Follow-up date<br>
+    <input type="date" id="trackerFollowUpDate" value="{{ tracker_follow_up_date or '' }}">
+  </label>
+  <label class="meta-line">Notes<br>
+    <textarea id="trackerNotes" rows="3" style="width:100%;">{{ tracker_notes or '' }}</textarea>
+  </label>
+  <p>
+    <button id="trackerFieldsSaveBtn" class="copy-btn" type="button"
+            data-run-id="{{ run_id }}" data-job-index="{{ job_index }}">Save</button>
+    <span id="trackerFieldsMsg" class="muted"></span>
+  </p>
+</div>
+
+<h2>Recommendation</h2>
+<p>{{ job.recommendation or "—" }}</p>
+
+{% if job.reviewer_notes %}
+<h2>Reviewer Notes</h2>
+<p>{{ job.reviewer_notes }}</p>
+{% endif %}
+
+{% if job.quality_warnings %}
+<h2>Quality Control Warnings</h2>
+<ul>{% for w in job.quality_warnings %}<li class="muted">{{ w }}</li>{% endfor %}</ul>
+{% endif %}
+
+<div class="keyword-cols">
+  <div>
+    <h2>Matched keywords</h2>
+    <div class="pill-row">
+      {% for kw in (job.matched_keywords or []) %}<span class="pill pill-good">{{ kw }}</span>{% endfor %}
+    </div>
+  </div>
+  <div>
+    <h2>Missing keywords</h2>
+    <div class="pill-row">
+      {% for kw in (job.missing_keywords or []) %}<span class="pill pill-bad">{{ kw }}</span>{% endfor %}
+    </div>
+  </div>
+</div>
+
+<h2>Resume downloads</h2>
+<div class="download-row">
+  <div>
+    <strong>PDF (to submit):</strong>
+    {% if ats_available %}
+      <a href="/downloads/{{ run_id }}/{{ job_index }}/ats">Download</a>
+    {% elif ats_generated %}
+      <span class="muted">Generated but not available on this machine — check the GitHub Actions run artifact.</span>
+    {% else %}
+      <span class="muted">Not generated (dry run or optimize cap reached).</span>
+    {% endif %}
+  </div>
+  <div>
+    <strong>DOCX (editable):</strong>
+    {% if review_available %}
+      <a href="/downloads/{{ run_id }}/{{ job_index }}/review">Download</a>
+    {% elif review_generated %}
+      <span class="muted">Generated but not available on this machine — check the GitHub Actions run artifact.</span>
+    {% else %}
+      <span class="muted">Not generated (dry run or optimize cap reached).</span>
+    {% endif %}
+  </div>
+</div>
+
+{% if job.cover_note_variants %}
+<h2>Cover note variants</h2>
+<p class="meta-line">Different opening hooks for the same role — pick the one that fits, then copy.</p>
+{% for v in job.cover_note_variants %}
+<div class="qa-block">
+  <div class="qa-question">{{ (v.angle or "variant") | replace("-", " ") | title }}
+    <button class="copy-btn" type="button" data-copy-target="coverVar{{ loop.index }}">Copy</button>
+  </div>
+  <pre id="coverVar{{ loop.index }}" class="copy-block">{{ v.text }}</pre>
+</div>
+{% endfor %}
+{% elif job.cover_note %}
+<h2>Cover note <button id="copyCoverBtn" class="copy-btn" type="button">Copy</button></h2>
+<pre id="coverNoteText" class="copy-block">{{ job.cover_note }}</pre>
+{% endif %}
+
+{% if job.screening_answers %}
+<h2>Screening answers</h2>
+{% for qa in job.screening_answers %}
+<div class="qa-block">
+  <div class="qa-question">{{ qa.question }}</div>
+  <div class="qa-answer">{{ qa.answer }}</div>
+</div>
+{% endfor %}
+{% endif %}
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    if (window.initCopyButton) window.initCopyButton("copyCoverBtn", "coverNoteText");
+
+    // Per-variant cover-note copy buttons (data-copy-target points at a <pre> id).
+    document.querySelectorAll(".copy-btn[data-copy-target]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        var el = document.getElementById(b.dataset.copyTarget);
+        if (!el) return;
+        navigator.clipboard.writeText(el.textContent).then(function () {
+          var o = b.textContent; b.textContent = "Copied!";
+          setTimeout(function () { b.textContent = o; }, 1500);
+        });
+      });
+    });
+
+    var fieldsBtn = document.getElementById("trackerFieldsSaveBtn");
+    if (fieldsBtn) {
+      fieldsBtn.addEventListener("click", function () {
+        var msg = document.getElementById("trackerFieldsMsg");
+        fetch("/api/tracker/fields", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            run_id: fieldsBtn.dataset.runId,
+            job_index: parseInt(fieldsBtn.dataset.jobIndex, 10),
+            recruiter_name: document.getElementById("trackerRecruiterName").value,
+            follow_up_date: document.getElementById("trackerFollowUpDate").value,
+            notes: document.getElementById("trackerNotes").value,
+          }),
+        }).then(function (r) {
+          if (msg) { msg.textContent = r.ok ? "Saved" : "Save failed"; }
+          if (r.ok) { setTimeout(function () { if (msg) msg.textContent = ""; }, 1500); }
+        }).catch(function () { if (msg) msg.textContent = "Save failed"; });
+      });
+    }
+
+    var sel = document.getElementById("trackerStatusSelect");
+    if (sel) {
+      sel.addEventListener("change", function () {
+        var msg = document.getElementById("trackerStatusMsg");
+        fetch("/api/tracker/status", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            run_id: sel.dataset.runId,
+            job_index: parseInt(sel.dataset.jobIndex, 10),
+            status: sel.value,
+          }),
+        }).then(function (r) {
+          if (msg) { msg.textContent = r.ok ? "Saved" : "Save failed"; }
+          if (r.ok) { setTimeout(function () { if (msg) msg.textContent = ""; }, 1500); }
+        }).catch(function () { if (msg) msg.textContent = "Save failed"; });
+      });
+    }
+  });
+</script>
+{% endblock %}

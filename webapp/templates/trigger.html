@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Trigger — Job Search Dashboard{% endblock %}
+{% block content %}
+<h1>Trigger a Run</h1>
+
+<form id="triggerForm" class="trigger-form">
+  <label>
+    <input type="checkbox" id="dryRunCheckbox" checked>
+    Dry run (no email, no DOCX writes)
+  </label>
+  <label class="resume-label">
+    Resume path
+    <input type="text" id="resumePathInput" value="{{ default_resume }}">
+  </label>
+  <label>
+    <input type="checkbox" id="enableCrawl4aiCheckbox">
+    Enable crawl4ai web-board scraping (Naukri/Indeed/Foundit/Instahyre/Wellfound — local/residential IP only)
+  </label>
+  <button type="submit" id="triggerBtn">Start run</button>
+</form>
+
+<div id="triggerMessage" class="trigger-message"></div>
+
+<div id="statusPanel" class="status-panel" hidden>
+  <h2>Run progress</h2>
+  <div id="statusStage" class="status-stage">idle</div>
+  <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+  <div id="statusDetail" class="status-detail"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    if (window.initTriggerPage) window.initTriggerPage();
+  });
+</script>
+{% endblock %}

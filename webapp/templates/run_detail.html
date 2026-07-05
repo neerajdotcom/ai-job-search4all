@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}Run {{ run_id }} — Job Search Dashboard{% endblock %}
+{% block content %}
+{% if run is none %}
+<h1>Run not found</h1>
+<p class="empty-state">No run with id <code>{{ run_id }}</code>.</p>
+{% else %}
+<h1>Run {{ run.run_id }}</h1>
+<div class="cards">
+  <div class="card"><div class="card-value">{{ run.total_scraped }}</div><div class="card-label">Scraped</div></div>
+  <div class="card"><div class="card-value">{{ run.total_scored }}</div><div class="card-label">Scored</div></div>
+  <div class="card"><div class="card-value">{{ run.total_qualifying }}</div><div class="card-label">Qualifying</div></div>
+  <div class="card"><div class="card-value">{{ run.ghost_flagged_count or 0 }}</div><div class="card-label">Ghost flagged</div></div>
+  <div class="card"><div class="card-value">{{ run.off_target_skipped_count or 0 }}</div><div class="card-label">Off-target skipped</div></div>
+  <div class="card"><div class="card-value">{{ "Yes" if run.email_sent else "No" }}</div><div class="card-label">Email sent</div></div>
+</div>
+
+<p class="meta-line">
+  Source: <span class="badge badge-neutral">{{ run.source }}</span>
+  &middot; Mode: {{ "Dry run" if run.dry_run else "Live" }}
+  &middot; Started: {{ run.started_at }}
+  {% if run.github_run_url %}&middot; <a href="{{ run.github_run_url }}">GitHub Actions run</a>{% endif %}
+</p>
+
+{% if run.errors %}
+<div class="error-box">
+  <strong>Errors ({{ run.errors|length }}):</strong>
+  <ul>{% for err in run.errors %}<li>{{ err }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+{% if run.skill_gaps %}
+<h2>Skill Gaps This Run</h2>
+<p class="meta-line">Keywords most often missing across this run's scored jobs.</p>
+<div class="pill-row">
+  {% for g in run.skill_gaps %}<span class="pill pill-bad">{{ g.skill }} &times;{{ g.count }}</span>{% endfor %}
+</div>
+{% endif %}
+
+{% if run.training_recs %}
+<h2>Recommended Training</h2>
+<p class="meta-line">Courses / certifications to close the most-recurring gaps above.</p>
+<ul>
+  {% for r in run.training_recs %}
+  <li><strong>{{ r.recommendation }}</strong>{% if r.skill %} <span class="muted">(closes: {{ r.skill }})</span>{% endif %}{% if r.why %} — {{ r.why }}{% endif %}</li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+{% macro job_row(job, idx) %}
+{% set score = job.match_score or 0 %}
+{% set sfg, sbg = seniority_badge_colors(job.seniority_fit or "") %}
+{% set ifg, ibg = industry_badge_colors(job.industry_fit or "") %}
+<tr>
+  <td><a href="/runs/{{ run.run_id }}/jobs/{{ idx }}">{{ job.title }}</a>{% if job.live is defined and job.live == false %} <span class="pill pill-bad" title="Link may be closed — verify before applying">⚠</span>{% endif %}</td>
+  <td>{% if job.target_company %}<span title="On your target-company list">⭐</span> {% endif %}{{ job.company }}</td>
+  <td><span class="badge" style="color:{{ score_color(score) }};background:{{ score_bg(score) }};">{{ score }}%</span></td>
+  <td>{% if job.reviewer_score is not none %}{{ job.reviewer_score }}%{% else %}—{% endif %}</td>
+  <td><span class="badge" style="color:{{ sfg }};background:{{ sbg }};">{{ job.seniority_fit or "—" }}</span></td>
+  <td><span class="badge" style="color:{{ ifg }};background:{{ ibg }};">{{ industry_label(job.industry_fit) or "—" }}</span></td>
+  <td>{{ "Yes" if job.qualifying else "No" }}</td>
+  <td>{{ "Yes" if job.optimized else "No" }}</td>
+  <td>{% if job.quality_warnings %}<span class="pill pill-bad" title="{{ job.quality_warnings|join('; ') }}">⚠ {{ job.quality_warnings|length }}</span>{% else %}—{% endif %}</td>
+  <td>{% if job.ghost_flagged %}<span class="pill pill-bad" title="{{ job.ghost_reason }}">👻 Ghost</span>{% elif job.off_target_skipped %}<span class="pill pill-bad" title="Not a target PM/Delivery/Producer role">🎯 Off-target</span>{% else %}—{% endif %}</td>
+</tr>
+{% endmacro %}
+
+{% set table_head %}
+<thead>
+  <tr>
+    <th>Title</th>
+    <th>Company</th>
+    <th>Score</th>
+    <th>Reviewer</th>
+    <th>Seniority</th>
+    <th>Industry</th>
+    <th>Qualifying</th>
+    <th>Optimized</th>
+    <th>QC</th>
+    <th>Ghost</th>
+  </tr>
+</thead>
+{% endset %}
+
+{% set has_secondary_track = run.jobs|selectattr("resume_track", "defined")|selectattr("resume_track", "equalto", "secondary")|list|length > 0 %}
+{% if has_secondary_track %}
+<h2>Primary Matches — Primary Resume <span class="meta-line">(target location, non-QA)</span></h2>
+<table class="data-table">
+  {{ table_head }}
+  <tbody>
+    {% for job in run.jobs %}{% if job.is_target_location|default(true) and not job.is_qa_role|default(false) and job.resume_track != "secondary" %}{{ job_row(job, loop.index0) }}{% endif %}{% endfor %}
+  </tbody>
+</table>
+
+<h2>Primary Matches — Secondary Resume <span class="meta-line">(target location, non-QA)</span></h2>
+<table class="data-table">
+  {{ table_head }}
+  <tbody>
+    {% for job in run.jobs %}{% if job.is_target_location|default(true) and not job.is_qa_role|default(false) and job.resume_track == "secondary" %}{{ job_row(job, loop.index0) }}{% endif %}{% endfor %}
+  </tbody>
+</table>
+{% else %}
+<h2>Primary Matches <span class="meta-line">(target location, non-QA)</span></h2>
+<table class="data-table">
+  {{ table_head }}
+  <tbody>
+    {% for job in run.jobs %}{% if job.is_target_location|default(true) and not job.is_qa_role|default(false) %}{{ job_row(job, loop.index0) }}{% endif %}{% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<h2>Outside Target Location</h2>
+<table class="data-table">
+  {{ table_head }}
+  <tbody>
+    {% for job in run.jobs %}{% if not job.is_target_location|default(true) and not job.is_qa_role|default(false) %}{{ job_row(job, loop.index0) }}{% endif %}{% endfor %}
+  </tbody>
+</table>
+
+<h2>QA / Testing Roles</h2>
+<table class="data-table">
+  {{ table_head }}
+  <tbody>
+    {% for job in run.jobs %}{% if job.is_qa_role|default(false) %}{{ job_row(job, loop.index0) }}{% endif %}{% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}

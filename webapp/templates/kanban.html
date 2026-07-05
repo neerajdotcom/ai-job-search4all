@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Pipeline — Job Search Dashboard{% endblock %}
+{% block content %}
+<h1>Application Pipeline</h1>
+<p class="meta-line">Drag a card to move it through the pipeline. Changes save instantly to the tracker.</p>
+
+<div id="kanbanBoard" class="kanban-board">
+  {% for col in board.columns %}
+  <div class="kanban-column">
+    <div class="kanban-column-header">
+      {{ col.label }} <span class="kanban-count">{{ col.entries | length }}</span>
+    </div>
+    <div class="kanban-column-body" data-status="{{ col.status }}">
+      {% for entry in col.entries %}
+      <div class="kanban-card" draggable="true" data-key="{{ entry.key }}">
+        <div class="kanban-card-title">{{ entry.title or "Untitled role" }}</div>
+        <div class="kanban-card-company">{{ entry.company or "—" }}</div>
+        <div class="kanban-card-meta">
+          {% if entry.last_score is not none %}
+          <span class="badge" style="color:{{ score_color(entry.last_score) }};background:{{ score_bg(entry.last_score) }};">{{ entry.last_score }}%</span>
+          {% endif %}
+          <span class="muted">{{ entry.source or "" }}</span>
+        </div>
+        <a class="kanban-card-link" href="{{ entry.apply_url | safe_url }}" target="_blank" rel="noopener noreferrer">Open posting &rarr;</a>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{% if board.closed %}
+<h2>Closed</h2>
+<div class="kanban-closed-row">
+  {% for entry in board.closed %}
+  <div class="kanban-card kanban-card-closed">
+    <div class="kanban-card-title">{{ entry.title or "Untitled role" }}</div>
+    <div class="kanban-card-company">{{ entry.company or "—" }}</div>
+    <span class="badge badge-neutral">{{ entry.status | replace("_", " ") }}</span>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div id="kanbanMessage" class="trigger-message"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    if (window.initKanbanPage) window.initKanbanPage();
+  });
+</script>
+{% endblock %}

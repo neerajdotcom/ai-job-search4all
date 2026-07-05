@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Runs — Job Search Dashboard{% endblock %}
+{% block content %}
+<h1>Run History</h1>
+
+{% if runs|length == 0 and not active_run %}
+<p class="empty-state">No runs yet.</p>
+{% else %}
+<table class="data-table" data-runs-table>
+  <thead>
+    <tr>
+      <th>Run ID</th>
+      <th>Started</th>
+      <th>Source</th>
+      <th>Mode</th>
+      <th>Scraped</th>
+      <th>Scored</th>
+      <th>Qualifying</th>
+      <th>Email sent</th>
+      <th>Errors</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% if active_run %}
+    <tr id="inProgressRow" class="in-progress">
+      <td>{{ active_run.run_id }}</td>
+      <td>{{ active_run.started_at }}</td>
+      <td><span class="badge badge-neutral">webapp</span></td>
+      <td>{{ "Dry run" if active_run.dry_run else "Live" }}</td>
+      <td colspan="5">
+        <span class="badge badge-neutral">In progress</span>
+        <span id="inProgressStatus">{{ active_run.stage }}{% if active_run.total %} {{ active_run.current }}/{{ active_run.total }}{% endif %}</span>
+      </td>
+    </tr>
+    {% endif %}
+    {% for run in runs %}
+    <tr>
+      <td><a href="/runs/{{ run.run_id }}">{{ run.run_id }}</a></td>
+      <td>{{ run.started_at }}</td>
+      <td><span class="badge badge-neutral">{{ run.source }}</span></td>
+      <td>{{ "Dry run" if run.dry_run else "Live" }}</td>
+      <td>{{ run.total_scraped }}</td>
+      <td>{{ run.total_scored }}</td>
+      <td>{{ run.total_qualifying }}</td>
+      <td>{{ "Yes" if run.email_sent else "No" }}</td>
+      <td>{{ run.error_count }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="pagination">
+  {% if page > 1 %}
+  <a href="/runs?page={{ page - 1 }}&page_size={{ page_size }}">&larr; Previous</a>
+  {% endif %}
+  <span>Page {{ page }} of {{ total_pages }} ({{ total }} run{{ "s" if total != 1 else "" }})</span>
+  {% if page < total_pages %}
+  <a href="/runs?page={{ page + 1 }}&page_size={{ page_size }}">Next &rarr;</a>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    if (window.initRunsPage) window.initRunsPage();
+  });
+</script>
+{% endblock %}

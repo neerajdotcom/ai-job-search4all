@@ -1,0 +1,19 @@
+# Secrets — never commit
+.env
+
+# Generated outputs
+outputs/*
+!outputs/.gitkeep
+
+# Derived view of data/tracker.json (regenerated each run) — tracker.json
+# itself stays committed and canonical.
+data/tracker_export.csv
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# OS
+.DS_Store
