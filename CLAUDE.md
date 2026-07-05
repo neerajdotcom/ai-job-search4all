@@ -6,7 +6,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > every session. Deep per-module detail lives in nested `CLAUDE.md` files
 > that Claude Code loads only when you work in that subtree:
 > `scraper/` · `scorer/` · `optimizer/` · `digest/` · `storage/` · `webapp/`
-> · `mcp_server/`. Reusable task workflows live in `.claude/skills/`.
+> · `mcp_server/` · `native/`. Reusable task workflows live in `.claude/skills/`.
+
+> **Two execution modes.** The pipeline described below (`main.py`,
+> Gemini/Groq) is the original **API mode** — still fully supported. A
+> second **Claude-native mode** (`native/`, `.claude/commands/scrape-native.md`,
+> `.claude/commands/apply-native.md`, `.claude/skills/job-fit-evaluator/`)
+> does the same scrape → fit-score → tailor flow with **zero LLM API keys**:
+> scoring and resume tailoring happen as Claude's own reasoning instead of
+> Gemini/Groq calls. It reuses the same deterministic building blocks
+> (scraper, DOCX patch/PDF render, tracker, run snapshots) via `native/cli.py`,
+> runs interactively (`/scrape-native`, `/apply-native <url>`) or headlessly
+> in CI (`.github/workflows/job_search_native.yml`, authenticated with the
+> same `CLAUDE_CODE_OAUTH_TOKEN` this repo already uses for `claude.yml`).
+> See `native/CLAUDE.md` for the mode's internals.
 
 ## What This Is
 A deploy-your-own, single-user job-search pipeline. Every candidate-specific
