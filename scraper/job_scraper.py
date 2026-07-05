@@ -184,8 +184,11 @@ def _is_target_location(area, location: str, profile) -> bool:
     loc = (location or "").lower()
     if target in loc or any(a in loc for a in aliases):
         return True
+    # An explicit mention of any OTHER country in the location string is a
+    # hard non-target signal — a "San Mateo, CA, United States" posting is
+    # not a target-country match for an India-targeting profile.
     if any(c in loc for c in other_countries):
-        return True
+        return False
     # A city belonging to a different country than the target is a signal;
     # a city belonging to the target country (or unmapped) is not.
     for city, country in _CITY_COUNTRY_MAP.items():
