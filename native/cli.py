@@ -60,6 +60,16 @@ def cmd_dedupe(args) -> None:
     _print_json(unscored)
 
 
+def cmd_rubric(args) -> None:
+    """Print the exact same profile-driven scoring rubric text
+    scorer.match_scorer.build_scoring_instructions() sends to Groq — so the
+    native fit-evaluator skill scores against the identical rubric with zero
+    risk of drifting from the Groq path's wording over time."""
+    from scorer.match_scorer import build_scoring_instructions
+    profile = _load_profile(args.profile)
+    print(build_scoring_instructions(profile))
+
+
 def cmd_patch_resume(args) -> None:
     from optimizer.resume_optimizer import patch_docx
     profile = _load_profile(args.profile)
@@ -125,6 +135,10 @@ def main() -> None:
     p_dedupe.add_argument("--profile", help="Path to candidate_profile/config.yaml")
     p_dedupe.add_argument("--jobs-json", help="Path to jobs JSON, or omit/'-' to read stdin")
     p_dedupe.set_defaults(func=cmd_dedupe)
+
+    p_rubric = sub.add_parser("rubric", help="Print the profile-driven scoring rubric (same text the Groq path uses) as plain text")
+    p_rubric.add_argument("--profile", help="Path to candidate_profile/config.yaml")
+    p_rubric.set_defaults(func=cmd_rubric)
 
     p_patch = sub.add_parser("patch-resume", help="Patch a DOCX resume + render PDF from a tailoring JSON result (same schema as optimizer.resume_optimizer.call_llm's output)")
     p_patch.add_argument("--docx", required=True, help="Path to the source resume DOCX")
