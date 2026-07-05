@@ -43,6 +43,15 @@ stdin) so results pipe between steps without re-parsing:
   distinguish which pipeline produced a run.
 - `mark-seen` / `export-csv` — thin wrappers over
   `storage.tracker_store.mark_seen`/`export_csv`.
+- `verify` — end-to-end deterministic pre-flight: runs every subcommand
+  above against the example profile + sample résumé with `ADZUNA_APP_ID`
+  force-unset, asserts each stage succeeded, and **cleans up every
+  artifact it produced** (patched résumé under `outputs/`, run snapshot
+  under `data/runs/`, `data/tracker.json`, `data/tracker_export.csv`)
+  before exiting. Exit 0 = the deterministic zero-key plumbing works on
+  this machine. Anything unverified (interactive `/apply-native`'s
+  reasoning steps, a real `workflow_dispatch` of `job_search_native.yml`)
+  needs the manual runbook in [`docs/verify-native.md`](../docs/verify-native.md).
 
 ## Gotchas
 - `save-run`'s `--summary-json` needs `started_at` as an ISO 8601 string

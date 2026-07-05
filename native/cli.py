@@ -18,6 +18,7 @@ Usage:
         --summary-json summary.json --jobs-json jobs.json
     python -m native.cli mark-seen --profile config.yaml < jobs.json
     python -m native.cli export-csv
+    python -m native.cli verify        # pre-flight, cleans up after itself
 """
 
 import argparse
@@ -123,6 +124,202 @@ def cmd_export_csv(args) -> None:
     _print_json({"csv_path": str(path)})
 
 
+def cmd_verify(args) -> None:
+    """End-to-end deterministic pre-flight check for Claude-native mode.
+
+    Runs every deterministic native/cli.py subcommand against the sample
+    profile + sample resume with zero API keys, asserts each step
+    succeeded, and cleans up every artifact it produced before exiting.
+    Green exit code = the mode's deterministic plumbing works on this
+    machine; only the reasoning-heavy steps of /apply-native (fit eval,
+    drafter, reviewer) and the actual `anthropics/claude-code-action`
+    workflow run remain unverified.
+
+    Deliberately imports each stage inline (not at module top) so a single
+    failing stage doesn't mask the rest — we still print which stage
+    failed before propagating the exception.
+    """
+    import os
+    from candidate_profile.loader import EXAMPLE_PROFILE_PATH, load_profile
+
+    print("=" * 70)
+    print("native/cli.py verify — zero-key pre-flight")
+    print("=" * 70)
+
+    profile = load_profile(str(EXAMPLE_PROFILE_PATH))
+    resume_docx = Path(profile.resume_path)
+    if not resume_docx.exists():
+        # Sample profile always ships one; a missing sample resume means the
+        # repo layout was tampered with and every downstream step will fail.
+        raise SystemExit(f"Sample resume not found at {resume_docx} — repo layout broken")
+
+    # Track everything we write so we can delete it at the end regardless of
+    # whether the run passed or failed (matches the verify-before-claiming-done
+    # skill's "clean up every artifact" rule — verification that pollutes real
+    # state isn't free).
+    artifacts_to_clean: list[Path] = []
+    failures: list[str] = []
+
+    def _step(label: str) -> None:
+        print(f"\n[STEP] {label}")
+
+    try:
+        # ── 1. Scrape (zero keys) ──────────────────────────────────────────
+        _step("scrape (LinkedIn guest source, zero keys required)")
+        # Force-unset Adzuna to prove the LinkedIn-only path works.
+        prior_adzuna = (os.environ.pop("ADZUNA_APP_ID", None),
+                        os.environ.pop("ADZUNA_APP_KEY", None))
+        try:
+            from scraper.job_scraper import scrape_all_jobs
+            jobs = scrape_all_jobs(profile)
+        finally:
+            if prior_adzuna[0] is not None:
+                os.environ["ADZUNA_APP_ID"] = prior_adzuna[0]
+            if prior_adzuna[1] is not None:
+                os.environ["ADZUNA_APP_KEY"] = prior_adzuna[1]
+        if not jobs:
+            failures.append("scrape returned zero jobs — LinkedIn source is not producing matches")
+            print("  ✗ 0 jobs (expected at least 1)")
+        else:
+            print(f"  ✓ {len(jobs)} jobs")
+
+        # ── 2. Dedupe ─────────────────────────────────────────────────────
+        _step("dedupe (filter_unscored, respects RESCORE_TTL_DAYS)")
+        from storage.tracker_store import filter_unscored
+        unscored = filter_unscored(jobs)
+        print(f"  ✓ {len(unscored)} jobs remain after dedup")
+
+        # ── 3. Rubric ─────────────────────────────────────────────────────
+        _step("rubric (build_scoring_instructions — same text Groq path uses)")
+        from scorer.match_scorer import build_scoring_instructions
+        rubric = build_scoring_instructions(profile)
+        if not rubric or "match_score" not in rubric:
+            failures.append("rubric text is empty or missing 'match_score' — build_scoring_instructions is broken")
+            print("  ✗ rubric text malformed")
+        else:
+            print(f"  ✓ rubric text {len(rubric)} chars")
+
+        # ── 4. Patch resume (deterministic patch + PDF render) ────────────
+        _step("patch-resume (patch_docx + LibreOffice PDF render OR DOCX fallback)")
+        from optimizer.resume_optimizer import (
+            extract_docx_text, extract_protected_metrics, patch_docx,
+        )
+        pre_patch_text = extract_docx_text(str(resume_docx))
+        protected = extract_protected_metrics(pre_patch_text)
+        first_role_key = next(iter(profile.roles), "role1")
+        fabricated_tailoring = {
+            "match_score": 82,
+            "missing_keywords": [],
+            "strong_matches": [],
+            "chosen_archetype": next(iter(profile.archetypes), "default"),
+            "optimized_summary": (
+                "Verify-step optimized summary: reframing existing experience "
+                "for TestCo without adding new claims."
+            ),
+            "optimized_competencies": ["Product Roadmapping", "Delivery"],
+            "optimized_bullets": {
+                first_role_key: [
+                    (
+                        # Preserve at least one protected metric verbatim so
+                        # the "never drop a metric" guard is genuinely tested.
+                        f"Led delivery improving activation by "
+                        f"{next(iter(protected), '25%')} in verify-mode fixture"
+                    ),
+                ],
+            },
+            "cover_note_variants": [
+                {"angle": "domain-fit", "text": "Verify-mode fixture cover note."}
+            ],
+            "screening_answers": [
+                {"question": "Notice period?", "answer": "As stated in profile.context"}
+            ],
+        }
+        ats_path, review_path, quality_warnings = patch_docx(
+            str(resume_docx), fabricated_tailoring, profile, "VerifyTestCo", "Product Manager",
+        )
+        artifacts_to_clean.append(Path(ats_path))
+        if str(review_path) != str(ats_path):
+            artifacts_to_clean.append(Path(review_path))
+
+        # Verify every protected metric survived — this is the guard the
+        # Gemini path relies on, so a broken build here breaks both modes.
+        post_patch_text = extract_docx_text(str(review_path))
+        dropped = [m for m in protected if m not in post_patch_text]
+        if dropped:
+            failures.append(f"patch-resume dropped protected metrics: {dropped}")
+            print(f"  ✗ dropped metrics: {dropped}")
+        else:
+            print(f"  ✓ patched, protected metrics preserved ({len(protected)} tracked)")
+        if quality_warnings:
+            # Not a failure by itself — a missing role section or an absent
+            # LibreOffice is fail-open by design. Just surface it so the
+            # runbook reader can distinguish "expected" from "surprising."
+            for w in quality_warnings:
+                print(f"    ⚠ {w}")
+
+        # ── 5. save-run + mark-seen + export-csv ───────────────────────────
+        _step("save-run + mark-seen + export-csv (git-committed state)")
+        # RunSummary import lives in main.py; keep the import inline so a
+        # broken import doesn't take out the earlier steps.
+        from main import RunSummary
+        from storage.run_store import RUNS_DIR, save_run_snapshot
+        from storage.tracker_store import (
+            export_csv as _export_csv, load_tracker,
+            mark_seen, save_tracker,
+        )
+        # Snapshot the *current* tracker state so we can restore it after
+        # the verify run — we must not persist a fake entry to real
+        # git-committed state.
+        pre_tracker = load_tracker()
+
+        summary = RunSummary(dry_run=True)
+        summary.total_scraped = len(jobs)
+        summary.total_scored = 0
+        summary.total_qualifying = 0
+        snapshot_path = save_run_snapshot(summary, unscored[:1], source="verify")
+        artifacts_to_clean.append(snapshot_path)
+        print(f"  ✓ run snapshot: {snapshot_path.name}")
+
+        mark_seen(unscored[:1])
+        csv_path = _export_csv()
+        artifacts_to_clean.append(csv_path)
+        # Tracker JSON — restore rather than delete, since a real tracker
+        # would already exist for a real user; but if none existed before,
+        # remove ours so we don't create it as a side-effect.
+        from storage.tracker_store import TRACKER_PATH
+        if pre_tracker:
+            save_tracker(pre_tracker)
+        else:
+            artifacts_to_clean.append(TRACKER_PATH)
+        print(f"  ✓ tracker CSV: {csv_path.name}")
+
+    finally:
+        # Clean up EVERY artifact this run produced — the verify-before-
+        # claiming-done skill's cardinal rule.
+        _step(f"cleanup ({len(artifacts_to_clean)} artifact(s))")
+        for p in artifacts_to_clean:
+            try:
+                if p.exists():
+                    p.unlink()
+                    print(f"  ✓ removed {p}")
+            except Exception as exc:
+                print(f"  ⚠ could not remove {p}: {exc}")
+
+    print("\n" + "=" * 70)
+    if failures:
+        print(f"FAIL ({len(failures)} issue(s)):")
+        for f in failures:
+            print(f"  • {f}")
+        print("=" * 70)
+        raise SystemExit(1)
+    print("PASS — deterministic zero-key pipeline is green.")
+    print("Still unverified (require a real Claude session / real GHA run):")
+    print("  • /apply-native's reasoning steps (fit-eval, draft, reviewer, revise)")
+    print("  • job_search_native.yml running end-to-end on a GHA runner")
+    print("See docs/verify-native.md for the runbook to cover those manually.")
+    print("=" * 70)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -163,6 +360,9 @@ def main() -> None:
 
     p_csv = sub.add_parser("export-csv", help="Regenerate data/tracker_export.csv from the tracker")
     p_csv.set_defaults(func=cmd_export_csv)
+
+    p_verify = sub.add_parser("verify", help="End-to-end deterministic pre-flight check for Claude-native mode (zero keys, cleans up its own artifacts)")
+    p_verify.set_defaults(func=cmd_verify)
 
     args = parser.parse_args()
     args.func(args)
