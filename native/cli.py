@@ -19,6 +19,8 @@ Usage:
     python -m native.cli mark-seen --profile config.yaml < jobs.json
     python -m native.cli export-csv
     python -m native.cli verify        # pre-flight, cleans up after itself
+    python -m native.cli extract-resume-text --resume path/to/resume.pdf
+    python -m native.cli write-profile --extracted-json - --resume-dest-name resume.docx < extracted.json
 """
 
 import argparse
@@ -122,6 +124,44 @@ def cmd_export_csv(args) -> None:
     from storage.tracker_store import export_csv
     path = export_csv()
     _print_json({"csv_path": str(path)})
+
+
+def cmd_extract_resume_text(args) -> None:
+    """Print raw text extracted from a .docx or .pdf résumé to stdout.
+
+    Wraps setup_profile.load_resume_text unchanged — same DOCX/pypdf logic
+    the Gemini setup path uses, so a résumé that works for one path works
+    for the other. Exists so /setup-native can handle a PDF résumé (which
+    Claude's Read tool can't natively) without duplicating the pypdf
+    handling here.
+    """
+    from setup_profile import load_resume_text
+    text = load_resume_text(args.resume)
+    print(text)
+
+
+def cmd_write_profile(args) -> None:
+    """Render an extracted-profile JSON into candidate_profile/config.yaml.
+
+    Input JSON must match the 8-key schema setup_profile.EXTRACTION_PROMPT
+    describes (name, title, years_experience, location,
+    target_location_country, search_terms, adjacent_industries, roles) —
+    the exact same schema call_gemini_extraction returns. This subcommand
+    then feeds it through setup_profile.build_config + write_config
+    unchanged, so /setup-native and the Gemini setup_profile.py produce
+    byte-identical YAML.
+    """
+    from setup_profile import CONFIG_PATH, build_config, write_config
+
+    extracted = _read_json_input(args.extracted_json)
+    if CONFIG_PATH.exists() and not args.force:
+        raise SystemExit(
+            f"{CONFIG_PATH} already exists. Pass --force to overwrite, "
+            "or edit it by hand."
+        )
+    config = build_config(extracted, args.resume_dest_name)
+    path = write_config(config)
+    _print_json({"config_path": str(path)})
 
 
 def cmd_verify(args) -> None:
@@ -363,6 +403,16 @@ def main() -> None:
 
     p_verify = sub.add_parser("verify", help="End-to-end deterministic pre-flight check for Claude-native mode (zero keys, cleans up its own artifacts)")
     p_verify.set_defaults(func=cmd_verify)
+
+    p_extract = sub.add_parser("extract-resume-text", help="Print raw text from a .docx or .pdf résumé to stdout (wraps setup_profile.load_resume_text)")
+    p_extract.add_argument("--resume", required=True, help="Path to a .docx or .pdf résumé")
+    p_extract.set_defaults(func=cmd_extract_resume_text)
+
+    p_write = sub.add_parser("write-profile", help="Render an extracted-profile JSON into candidate_profile/config.yaml (same YAML shape setup_profile.py produces)")
+    p_write.add_argument("--extracted-json", required=True, help="Path to JSON with the 8 keys setup_profile.EXTRACTION_PROMPT specifies, or '-' for stdin")
+    p_write.add_argument("--resume-dest-name", required=True, help="Filename the résumé was copied to under candidate_profile/, e.g. resume.docx")
+    p_write.add_argument("--force", action="store_true", help="Overwrite existing candidate_profile/config.yaml")
+    p_write.set_defaults(func=cmd_write_profile)
 
     args = parser.parse_args()
     args.func(args)

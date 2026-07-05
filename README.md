@@ -26,13 +26,15 @@ This repo runs two ways:
 - **API mode** (`python main.py`, described below) — scoring and résumé
   tailoring run on Gemini/Groq's free tiers. Fast, high-volume, needs API
   keys.
-- **Claude-native mode** — scoring and tailoring happen as **Claude Code's
-  own reasoning** instead of separate LLM API calls. If you're already
-  running this from Claude Code, you need **zero additional API keys** —
-  not even Adzuna, since job sourcing defaults to LinkedIn's public guest
-  search endpoints. Use it interactively:
+- **Claude-native mode** — scoring, tailoring, **and profile onboarding**
+  happen as **Claude Code's own reasoning** instead of separate LLM API
+  calls. If you're already running this from Claude Code, you need **zero
+  additional API keys** — not even Adzuna or Gemini, since job sourcing
+  defaults to LinkedIn's public guest search endpoints and profile
+  extraction runs inline. Use it interactively:
 
   ```
+  /setup-native path/to/your_resume.docx      # first time only
   /scrape-native
   /apply-native https://example.com/some/job/posting
   ```
@@ -42,6 +44,10 @@ This repo runs two ways:
   `claude setup-token`) — no Gemini/Groq/Adzuna keys at all. Gmail secrets
   are still optional if you want an email digest; the run persists its
   snapshot and outputs either way.
+
+  Before turning on the schedule, run `python -m native.cli verify` to
+  pre-flight the deterministic pipeline, then follow
+  [`docs/verify-native.md`](docs/verify-native.md) for the manual checks.
 
   See `native/CLAUDE.md` for how this mode reuses the same deterministic
   scraping/DOCX-patching/PDF-rendering code as API mode — only the
@@ -121,8 +127,10 @@ manually via the Actions tab's "Run workflow" button (with a dry-run option).
 - Local dashboard (browse run history/job matches, trigger runs from a UI): `python -m webapp` → `http://127.0.0.1:8000/`
 
 **Claude-native mode** (run these inside a Claude Code session):
+- `/setup-native path/to/resume.docx` — zero-key profile onboarding (equivalent of `setup_profile.py` without needing a Gemini key)
 - `/scrape-native [focus area]` — zero-key job search + quick fit pass
 - `/apply-native <url or pasted JD>` — full drafter-reviewer tailoring workflow
+- Pre-flight: `python -m native.cli verify` (runs the deterministic zero-key pipeline end-to-end and cleans up after itself)
 
 See `CLAUDE.md` for the full architecture — per-module docs live in nested
 `CLAUDE.md` files under `scraper/`, `scorer/`, `optimizer/`, `digest/`,

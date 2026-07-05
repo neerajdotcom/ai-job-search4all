@@ -43,6 +43,12 @@ stdin) so results pipe between steps without re-parsing:
   distinguish which pipeline produced a run.
 - `mark-seen` / `export-csv` — thin wrappers over
   `storage.tracker_store.mark_seen`/`export_csv`.
+- `extract-resume-text` / `write-profile` — the two thin wrappers that
+  make `/setup-native` a zero-key equivalent of `python setup_profile.py`:
+  `extract-resume-text` wraps `setup_profile.load_resume_text` so Claude
+  can read a `.pdf` résumé (the Read tool can't natively); `write-profile`
+  wraps `setup_profile.build_config` + `write_config` so the YAML shape
+  produced by `/setup-native` is byte-identical to the Gemini path.
 - `verify` — end-to-end deterministic pre-flight: runs every subcommand
   above against the example profile + sample résumé with `ADZUNA_APP_ID`
   force-unset, asserts each stage succeeded, and **cleans up every
