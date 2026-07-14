@@ -407,9 +407,13 @@ def patch_docx(
             quality_warnings.append(f"Role section '{role_key}' not found — bullets left unpatched")
             continue
 
-        # Collect bullet paragraphs that follow the role heading, skipping
-        # role-internal sub-headings and stopping at the next role or the
-        # next top-level section.
+        # Collect EVERY bullet paragraph under the role (until the next role
+        # or section). We used to stop collecting at 3 — but the DOCX still
+        # physically contained bullets 4+, so the patched output showed 3
+        # tailored bullets followed by whatever originals were in place,
+        # producing duplicated/stale content. We now collect all of them,
+        # overwrite the first N with the tailored bullets, and CLEAR the
+        # remainder in place so the reader sees only the tailored set.
         bullet_paragraphs = []
         for i in range(role_idx + 1, len(doc.paragraphs)):
             p = doc.paragraphs[i]
@@ -421,21 +425,35 @@ def patch_docx(
             if _is_role_subheading(p):
                 continue
             bullet_paragraphs.append(p)
-            if len(bullet_paragraphs) >= 3:
-                break
 
         if not bullet_paragraphs:
             logger.warning("Found role section for '%s' but no bullet paragraphs under it — left unpatched", role_key)
             quality_warnings.append(f"Role section '{role_key}' found but no bullets detected — left unpatched")
             continue
 
-        for idx, (bp, new_bullet) in enumerate(zip(bullet_paragraphs, bullets[:3])):
+        # Overwrite the first len(bullets) paragraphs; blank the rest so the
+        # role section shows only the tailored set. Blanking preserves the
+        # paragraph's numbering XML / bullet-list membership so the surviving
+        # bullets keep their template-driven bullet character — safer than
+        # deleting paragraphs, which python-docx does not support cleanly.
+        n = min(len(bullet_paragraphs), len(bullets))
+        for bp, new_bullet in zip(bullet_paragraphs[:n], bullets[:n]):
             original = bp.text
             # Guard: never drop a protected metric
             for metric in protected_metrics:
                 if metric in original and metric not in new_bullet:
                     new_bullet = new_bullet.rstrip(".") + f", achieving {metric} improvement."
             _replace_paragraph_text(bp, new_bullet)
+        # Blank any excess original bullets left over after the tailored set,
+        # so the tailored resume doesn't ship with stale bullets underneath.
+        # EXCEPT: if a surplus bullet contains a protected metric (a %/$/Nx
+        # figure the guard above insists must survive verbatim), keep it —
+        # blanking would drop the metric, which is the exact behavior the
+        # "never drop a protected metric" guard exists to prevent.
+        for bp in bullet_paragraphs[n:]:
+            if any(m in bp.text for m in protected_metrics):
+                continue
+            _replace_paragraph_text(bp, "")
 
     doc.save(str(docx_path))
 
