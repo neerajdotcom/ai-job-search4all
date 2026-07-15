@@ -148,6 +148,10 @@ def build_config(extracted: dict, resume_dest_name: str) -> dict:
         "target_location_country": extracted.get("target_location_country", ""),
         "target_location_aliases": ["remote"],
         "blocked_locations": [],
+        # Optional multi-city search — leave empty to search only `location`.
+        # Add more cities (e.g. ["Kolkata, India", "Mumbai, India",
+        # "Bangalore, India"]) to cast a wider net within the same country.
+        "search_locations": [],
         "search_terms": extracted.get("search_terms", []) or [],
         "target_companies": [],
         "experience_exclude_years": max(years + 5, 10),

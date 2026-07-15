@@ -221,8 +221,29 @@ def _render_pdf(docx_path: Path) -> Path | None:
 
 
 def _find_paragraph_index(doc: Document, search_text: str):
+    """Locate a heading paragraph by text. Prefers heading-shaped matches
+    (exact text equality, or a short paragraph whose stripped text starts
+    with the query) over a substring hit anywhere in the doc, because a
+    naive substring search matches the query inside a paragraph body — a
+    real bug caught in production: `search_text="Experience"` matched the
+    Professional Summary body ("...Cross-Functional Program Coordination.
+    Experience...") on one candidate's CV and returned the summary
+    paragraph as the "Experience heading," which then poisoned the section-
+    heading size reference and misclassified every downstream bullet."""
+    query = search_text.strip().lower()
+
+    # Pass 1: exact match (case-insensitive), ignoring surrounding whitespace.
     for i, p in enumerate(doc.paragraphs):
-        if search_text.lower() in p.text.lower():
+        if p.text.strip().lower() == query:
+            return i
+    # Pass 2: heading-shaped starts-with match on a short paragraph.
+    for i, p in enumerate(doc.paragraphs):
+        text = p.text.strip()
+        if len(text) <= 60 and text.lower().startswith(query):
+            return i
+    # Pass 3: legacy substring fallback (still needed for older templates).
+    for i, p in enumerate(doc.paragraphs):
+        if query in p.text.lower():
             return i
     return None
 
@@ -276,7 +297,16 @@ def patch_docx(
         quality_warnings.append("Professional Summary section not found — left unpatched")
 
     # --- Core Competencies ---
-    comp_idx = _find_paragraph_index(doc, "Core Competencies") or _find_paragraph_index(doc, "Competencies")
+    # Try common heading variants in specificity order — most CVs use one of
+    # "Core Competencies" / "Competencies" / "Skills Summary" / "Skills" /
+    # "Key Skills" for the skills-and-tools section. First match wins.
+    comp_idx = (
+        _find_paragraph_index(doc, "Core Competencies")
+        or _find_paragraph_index(doc, "Competencies")
+        or _find_paragraph_index(doc, "Skills Summary")
+        or _find_paragraph_index(doc, "Key Skills")
+        or _find_paragraph_index(doc, "Skills")
+    )
     if comp_idx is not None:
         for i in range(comp_idx + 1, min(comp_idx + 4, len(doc.paragraphs))):
             if doc.paragraphs[i].text.strip():
@@ -309,17 +339,41 @@ def patch_docx(
     # reference size below. Bullets are simply the non-bold paragraphs.
     section_idx = _find_paragraph_index(doc, "Professional Experience") or _find_paragraph_index(doc, "Experience")
     section_heading_size = None
+    section_heading_text = None
     if section_idx is not None and doc.paragraphs[section_idx].runs:
         section_heading_size = doc.paragraphs[section_idx].runs[0].font.size
+        section_heading_text = doc.paragraphs[section_idx].text.strip()
 
     def _is_section_heading(p) -> bool:
         if not p.runs or not p.runs[0].bold:
             return False
+        text = p.text.strip()
+        # First: recognize the reference "PROFESSIONAL EXPERIENCE" heading
+        # itself, plus other conventional section markers, purely by text.
+        # These are the strings that unambiguously start a new section on
+        # any resume template — treating them as section headings by name
+        # works even when font-size info is missing (a real production bug:
+        # `size is None or sh_size is None` used to fire True on every bold
+        # paragraph, misclassifying role sub-headings as section boundaries
+        # and losing all bullets in that role).
+        _WELL_KNOWN_SECTIONS = {
+            "professional experience", "experience", "work experience",
+            "education", "academics", "certifications", "publications",
+            "awards", "additional information", "skills", "skills summary",
+            "core competencies", "competencies", "key skills", "tools",
+            "professional summary", "summary",
+        }
+        if text.lower() in _WELL_KNOWN_SECTIONS:
+            return True
         size = p.runs[0].font.size
-        # No usable size info (or it matches/exceeds the reference section
-        # heading) -> treat as a section boundary. Conservative on purpose:
-        # stopping early just means fewer bullets patched, never a wrong one.
-        return size is None or section_heading_size is None or size >= section_heading_size
+        # Only trip the size compare when we HAVE both sizes to compare.
+        # A missing size (paragraph inherits from the paragraph-mark default)
+        # is not enough evidence on its own to call something a section
+        # heading — that decision now belongs to the well-known-text check
+        # above, not to a "no data" fallback that was over-aggressive.
+        if size is not None and section_heading_size is not None:
+            return size >= section_heading_size
+        return False
 
     def _is_role_subheading(p) -> bool:
         return bool(p.runs) and bool(p.runs[0].bold) and not _is_section_heading(p)
@@ -329,21 +383,37 @@ def patch_docx(
         if not bullets:
             continue
 
-        # Find the heading paragraph for this company
+        # Find the heading paragraph for this company. Prefer a bold match
+        # first — role headings are bold on every template we've seen, and
+        # this filter prevents a real bug: after the Professional Summary
+        # is patched (above), the tailored summary text often mentions the
+        # candidate's current employer by name, so a naive substring hit on
+        # keywords like "arrise" would land on the Summary body (a
+        # non-bold paragraph) instead of the actual role heading further
+        # down. Fall back to any match only if no bold match exists.
         role_idx = None
         for i, p in enumerate(doc.paragraphs):
-            if any(kw in p.text.lower() for kw in keywords):
+            if p.runs and p.runs[0].bold and any(kw in p.text.lower() for kw in keywords):
                 role_idx = i
                 break
+        if role_idx is None:
+            for i, p in enumerate(doc.paragraphs):
+                if any(kw in p.text.lower() for kw in keywords):
+                    role_idx = i
+                    break
 
         if role_idx is None:
             logger.warning("Could not locate role section for '%s' in DOCX — skipping bullets", role_key)
             quality_warnings.append(f"Role section '{role_key}' not found — bullets left unpatched")
             continue
 
-        # Collect bullet paragraphs that follow the role heading, skipping
-        # role-internal sub-headings and stopping at the next role or the
-        # next top-level section.
+        # Collect EVERY bullet paragraph under the role (until the next role
+        # or section). We used to stop collecting at 3 — but the DOCX still
+        # physically contained bullets 4+, so the patched output showed 3
+        # tailored bullets followed by whatever originals were in place,
+        # producing duplicated/stale content. We now collect all of them,
+        # overwrite the first N with the tailored bullets, and CLEAR the
+        # remainder in place so the reader sees only the tailored set.
         bullet_paragraphs = []
         for i in range(role_idx + 1, len(doc.paragraphs)):
             p = doc.paragraphs[i]
@@ -355,21 +425,35 @@ def patch_docx(
             if _is_role_subheading(p):
                 continue
             bullet_paragraphs.append(p)
-            if len(bullet_paragraphs) >= 3:
-                break
 
         if not bullet_paragraphs:
             logger.warning("Found role section for '%s' but no bullet paragraphs under it — left unpatched", role_key)
             quality_warnings.append(f"Role section '{role_key}' found but no bullets detected — left unpatched")
             continue
 
-        for idx, (bp, new_bullet) in enumerate(zip(bullet_paragraphs, bullets[:3])):
+        # Overwrite the first len(bullets) paragraphs; blank the rest so the
+        # role section shows only the tailored set. Blanking preserves the
+        # paragraph's numbering XML / bullet-list membership so the surviving
+        # bullets keep their template-driven bullet character — safer than
+        # deleting paragraphs, which python-docx does not support cleanly.
+        n = min(len(bullet_paragraphs), len(bullets))
+        for bp, new_bullet in zip(bullet_paragraphs[:n], bullets[:n]):
             original = bp.text
             # Guard: never drop a protected metric
             for metric in protected_metrics:
                 if metric in original and metric not in new_bullet:
                     new_bullet = new_bullet.rstrip(".") + f", achieving {metric} improvement."
             _replace_paragraph_text(bp, new_bullet)
+        # Blank any excess original bullets left over after the tailored set,
+        # so the tailored resume doesn't ship with stale bullets underneath.
+        # EXCEPT: if a surplus bullet contains a protected metric (a %/$/Nx
+        # figure the guard above insists must survive verbatim), keep it —
+        # blanking would drop the metric, which is the exact behavior the
+        # "never drop a protected metric" guard exists to prevent.
+        for bp in bullet_paragraphs[n:]:
+            if any(m in bp.text for m in protected_metrics):
+                continue
+            _replace_paragraph_text(bp, "")
 
     doc.save(str(docx_path))
 

@@ -26,6 +26,16 @@ location: "Bangalore, India"
 target_location_country: "india"       # matched against job location text
 target_location_aliases: ["remote"]    # locations that should always count as target
 blocked_locations: []                  # countries/cities to hard-exclude (e.g. visa constraints)
+# Optional. Cities to run separate job-board searches in — LinkedIn's guest
+# search is per-location, so each entry triggers its own search pass. Leave
+# empty ([]) to search only `location`. Example for a candidate open to
+# multiple Indian metros:
+#   search_locations:
+#     - "Bangalore, India"
+#     - "Mumbai, India"
+#     - "Pune, India"
+#     - "Hyderabad, India"
+search_locations: []
 
 # ---- search & scoring calibration ----
 search_terms:

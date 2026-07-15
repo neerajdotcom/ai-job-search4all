@@ -1,0 +1,122 @@
+name: Job Search Pipeline (Claude-native, zero-key)
+
+# Claude-native equivalent of job_search.yml: same scrape → score → tailor →
+# persist flow, but scoring/tailoring is Claude's own reasoning (via
+# anthropics/claude-code-action, the same action + secret job_search.yml's
+# sibling claude.yml/claude-code-review.yml already use) instead of
+# Gemini/Groq API calls. Needs exactly one credential — CLAUDE_CODE_OAUTH_TOKEN
+# — instead of GEMINI_API_KEY/GROQ_API_KEY/ADZUNA_APP_ID/ADZUNA_APP_KEY.
+# Gmail secrets are still optional if you want a digest email; the run still
+# completes and commits its snapshot without them.
+
+on:
+  schedule:
+    - cron: "30 1 * * 1-5"   # offset from job_search.yml's 01:00 UTC slot
+  workflow_dispatch:
+    inputs:
+      max_applies:
+        description: "Max postings to run the full /apply-native workflow on"
+        required: false
+        default: "5"
+
+concurrency:
+  group: job-search-pipeline-native
+  cancel-in-progress: true
+
+jobs:
+  run-pipeline-native:
+    name: Scrape → Fit-score → Tailor (Claude-native)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    permissions:
+      contents: write
+      id-token: write
+
+    env:
+      # Only required credential for this workflow — same secret already
+      # used by claude.yml / claude-code-review.yml in this repo.
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      # Optional — digest email is skipped gracefully if these are unset.
+      GMAIL_USER:          ${{ secrets.GMAIL_USER }}
+      GMAIL_APP_PASSWORD:  ${{ secrets.GMAIL_APP_PASSWORD }}
+      DIGEST_RECIPIENT:    ${{ secrets.DIGEST_RECIPIENT }}
+      # Direct-employer ATS boards (Greenhouse/Lever/Ashby/Workable) are
+      # zero-key and on by default — hand-picked iGaming/gaming company
+      # slugs in scraper/ats_scraper.py. Set to "false" to skip them.
+      ENABLE_ATS_SCRAPING: "true"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Ensure LibreOffice (DOCX → PDF renderer)
+        run: |
+          command -v soffice >/dev/null 2>&1 || sudo apt-get update && sudo apt-get install -y libreoffice-writer
+          soffice --version || true
+
+      - name: Verify profile is set up
+        run: |
+          if [ ! -f candidate_profile/config.yaml ]; then
+            echo "ERROR: candidate_profile/config.yaml missing."
+            echo "Run 'python setup_profile.py --resume your_resume.docx' locally"
+            echo "and commit the result before enabling scheduled runs."
+            exit 1
+          fi
+          echo "Profile found."
+
+      - name: Run Claude-native pipeline
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: >
+            Run the zero-key job search pipeline non-interactively, end to
+            end, with no user prompts (this is an unattended CI run):
+            1. Run /scrape-native.
+            2. From the results, select up to
+            ${{ github.event.inputs.max_applies || 5 }} postings scoring 60
+            or above that don't already have a tailored resume in outputs/.
+            3. For each selected posting, run /apply-native <its URL>,
+            answering "yes" to the "proceed with drafting" confirmation
+            automatically since this is unattended.
+            4. Persist the run: call native/cli.py mark-seen, save-run
+            (source=native, github_run_url=${{ github.server_url }}/${{
+            github.repository }}/actions/runs/${{ github.run_id }}), and
+            export-csv, exactly as /scrape-native's Step 5 describes.
+            5. If GMAIL_USER/GMAIL_APP_PASSWORD/DIGEST_RECIPIENT are set,
+            send a digest email summarizing what was found and tailored
+            (reuse digest/email_digest.py's HTML building blocks if
+            practical); otherwise skip email — this must not fail the run.
+            Report a final summary: postings scraped, postings tailored,
+            any quality_warnings, whether email was sent.
+
+      - name: Commit run snapshot
+        if: always()
+        run: |
+          git config user.name "job-search-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add data/runs/ data/tracker.json
+          if git diff --staged --quiet; then
+            echo "No new run snapshot or tracker change to commit."
+          else
+            git commit -m "data: add native run snapshot $(date -u +%Y%m%dT%H%M%SZ) [skip ci]"
+            git push
+          fi
+
+      - name: Upload outputs as artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: job-search-native-outputs-${{ github.run_number }}
+          path: outputs/
+          retention-days: 7
+          if-no-files-found: ignore

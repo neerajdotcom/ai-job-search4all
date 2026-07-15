@@ -6,7 +6,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > every session. Deep per-module detail lives in nested `CLAUDE.md` files
 > that Claude Code loads only when you work in that subtree:
 > `scraper/` · `scorer/` · `optimizer/` · `digest/` · `storage/` · `webapp/`
-> · `mcp_server/`. Reusable task workflows live in `.claude/skills/`.
+> · `mcp_server/` · `native/`. Reusable task workflows live in `.claude/skills/`.
+
+> **Two execution modes.** The pipeline described below (`main.py`,
+> Gemini/Groq) is the original **API mode** — still fully supported. A
+> second **Claude-native mode** (`native/`, `.claude/commands/scrape-native.md`,
+> `.claude/commands/apply-native.md`, `.claude/skills/job-fit-evaluator/`)
+> does the same scrape → fit-score → tailor flow with **zero LLM API keys**:
+> scoring and resume tailoring happen as Claude's own reasoning instead of
+> Gemini/Groq calls. It reuses the same deterministic building blocks
+> (scraper, DOCX patch/PDF render, tracker, run snapshots) via `native/cli.py`,
+> runs interactively (`/scrape-native`, `/apply-native <url>`) or headlessly
+> in CI (`.github/workflows/job_search_native.yml`, authenticated with the
+> same `CLAUDE_CODE_OAUTH_TOKEN` this repo already uses for `claude.yml`).
+> See `native/CLAUDE.md` for the mode's internals.
 
 ## What This Is
 A deploy-your-own, single-user job-search pipeline. Every candidate-specific
@@ -22,7 +35,7 @@ to `candidate_profile/config.yaml` and fill it in by hand.
 
 ## What This Does
 Each run:
-1. Scrapes Adzuna (country from `profile.adzuna_country_code`) + optionally direct employer ATS feeds for `profile.search_terms`
+1. Scrapes LinkedIn's public guest job search (zero API key, on by default) + optionally Adzuna (country from `profile.adzuna_country_code`) + optionally direct employer ATS feeds for `profile.search_terms`
 2. Locally pre-filters by keyword overlap (free, no API calls), then scores the top candidates against the résumé
 3. Optimizes a tailored resume (a submittable **PDF** + an editable DOCX companion) for qualifying jobs, capped per run to protect free-tier quota
 4. Emails one HTML digest with the match table, per-job recommendations, and "Fast-Apply Packs" (cover note + screening Q&A)
@@ -59,9 +72,9 @@ for a fully-commented template.
   - `python -m digest.email_digest` (sends a real test email with dummy jobs, or falls back to writing `outputs/digest_preview.html` if SMTP creds are missing)
 - No automated test suite exists — verification is via `--dry-run` and the per-module `__main__` blocks above.
 
-Required env vars (see `.env.example`): `GEMINI_API_KEY`, `GROQ_API_KEY`, `ADZUNA_APP_ID`, `ADZUNA_APP_KEY`, `GMAIL_USER`, `GMAIL_APP_PASSWORD`, `DIGEST_RECIPIENT`.
+Required env vars (see `.env.example`): `GEMINI_API_KEY`, `GROQ_API_KEY`, `GMAIL_USER`, `GMAIL_APP_PASSWORD`, `DIGEST_RECIPIENT`. **`ADZUNA_APP_ID`/`ADZUNA_APP_KEY` are optional** — the pipeline scrapes real jobs with zero keys via LinkedIn's public guest search (see `scraper/CLAUDE.md`); Adzuna is an additional, higher-volume source if you have keys.
 
-Optional, off by default: `ENABLE_CRAWL4AI` (web-board scraping via headless Chromium — most boards block datacenter IPs, so this is best run from a residential IP) and `ENABLE_ATS_SCRAPING` (direct Greenhouse/Lever/Ashby/Workable feeds — the company list in `scraper/ats_scraper.py` is empty by default; populate it with your own target employers first).
+Optional, off by default: `ENABLE_CRAWL4AI` (web-board scraping via headless Chromium — most boards block datacenter IPs, so this is best run from a residential IP). On by default: `ENABLE_LINKEDIN_SCRAPE` (LinkedIn's public guest job search — zero API key) and `ENABLE_ATS_SCRAPING` (direct Greenhouse/Lever/Ashby/Workable public APIs — zero API key, hand-picked company slugs in `scraper/ats_scraper.py`, currently iGaming/gaming-focused; irrelevant-industry profiles just get low-scoring results the 60-point gate filters out). Set either to `false` to disable.
 
 ## Pipeline Architecture (orchestration overview)
 `main.py` orchestrates everything:
