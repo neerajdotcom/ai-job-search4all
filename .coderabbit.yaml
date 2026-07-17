@@ -1,0 +1,69 @@
+# CodeRabbit configuration for ai-job-search4all
+# https://docs.coderabbit.ai/getting-started/yaml-configuration
+#
+# CodeRabbit is free for public open-source repositories. Install their
+# GitHub App at https://app.coderabbit.ai/login and it will start
+# reviewing PRs automatically — this file just tunes what it comments on.
+
+language: en-US
+
+reviews:
+  # `chill` = concise reviews focused on likely-actionable findings, without
+  # nitpicking every stylistic preference. Matches this repo's own review
+  # philosophy (see .claude/skills/ponytail-minimalism/SKILL.md).
+  profile: chill
+  high_level_summary: true
+  poem: false
+  sequence_diagrams: false
+  auto_review:
+    enabled: true
+    drafts: false  # don't spend a review cycle on draft PRs
+
+  # Skip generated / vendored / high-noise paths.
+  path_filters:
+    - "!**/*.lock"
+    - "!**/__pycache__/**"
+    - "!**/node_modules/**"
+    - "!**/venv/**"
+    - "!**/.venv/**"
+    - "!outputs/**"          # gitignored anyway, but belt-and-suspenders
+    - "!data/runs/**"        # committed run-snapshot history — not code
+    - "!data/tracker.json"   # cross-run tracker — not code
+    - "!candidate_profile/sample_resume.docx"
+    - "!candidate_profile/resume.docx"
+    - "!candidate_profile/resume.pdf"
+
+  # Repo-specific review guidance: mirror the boundaries the repo's own
+  # `.claude/skills/minimal-code-review/SKILL.md` documents.
+  path_instructions:
+    - path: "scraper/**/*.py"
+      instructions: |
+        Never suggest removing `_MIN_INTERVAL` throttles, `_daily_quota_exhausted`
+        short-circuits, retry backoffs, or the "flag, don't drop" tag pattern
+        (is_target_location / is_target_role / target_company / is_qa_role).
+        These are deliberate quota/robustness guards documented in the nested
+        CLAUDE.md — flagging them as "unused"/"dead code" is a false positive.
+    - path: "scorer/**/*.py"
+      instructions: |
+        Never suggest removing `_MIN_INTERVAL`, `_daily_quota_exhausted`, the
+        ghost-job/off-target skip logic, or the reviewer-pass band.
+        `_experience_override` and the profile-driven merit rubric are load-bearing.
+    - path: "optimizer/**/*.py"
+      instructions: |
+        Never suggest removing `extract_protected_metrics`, the protected-metric
+        preservation guard in `patch_docx`, the surplus-bullet clear (which
+        skips metric-bearing surplus bullets), or the well-known-section text
+        list in `_is_section_heading`. All are documented in optimizer/CLAUDE.md.
+    - path: "native/**/*.py"
+      instructions: |
+        Every subcommand's JSON schema must stay byte-compatible with the
+        Gemini pipeline's equivalent output (documented in native/CLAUDE.md).
+        Flag any change that would break that contract.
+    - path: ".github/workflows/**/*.yml"
+      instructions: |
+        Flag anything that would leak CLAUDE_CODE_OAUTH_TOKEN / ANTHROPIC_API_KEY
+        / ADZUNA / GEMINI / GROQ / GMAIL secrets to fork PRs (i.e. use of
+        `pull_request_target` without an author-association gate).
+
+chat:
+  auto_reply: true
