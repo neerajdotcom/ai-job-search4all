@@ -2,16 +2,21 @@ name: Job Search Pipeline (Claude-native, zero-key)
 
 # Claude-native equivalent of job_search.yml: same scrape → score → tailor →
 # persist flow, but scoring/tailoring is Claude's own reasoning (via
-# anthropics/claude-code-action, the same action + secret job_search.yml's
-# sibling claude.yml/claude-code-review.yml already use) instead of
-# Gemini/Groq API calls. Needs exactly one credential — CLAUDE_CODE_OAUTH_TOKEN
-# — instead of GEMINI_API_KEY/GROQ_API_KEY/ADZUNA_APP_ID/ADZUNA_APP_KEY.
-# Gmail secrets are still optional if you want a digest email; the run still
-# completes and commits its snapshot without them.
+# anthropics/claude-code-action, the same action + secret claude.yml already
+# uses) instead of Gemini/Groq API calls. Needs exactly one credential —
+# CLAUDE_CODE_OAUTH_TOKEN — instead of GEMINI_API_KEY/GROQ_API_KEY/
+# ADZUNA_APP_ID/ADZUNA_APP_KEY. Gmail secrets are still optional if you want
+# a digest email; the run still completes and commits its snapshot without them.
 
 on:
-  schedule:
-    - cron: "30 1 * * 1-5"   # offset from job_search.yml's 01:00 UTC slot
+  # Manual only by default — safer for a "deploy your own copy" template
+  # (no accidental Claude Code OAuth quota burn the moment someone forks
+  # and adds the CLAUDE_CODE_OAUTH_TOKEN secret). To enable a daily cron,
+  # uncomment the `schedule:` block below AFTER your first successful manual
+  # `workflow_dispatch` run. Adjust the time to your timezone.
+  #
+  # schedule:
+  #   - cron: "30 1 * * 1-5"   # offset from job_search.yml's 01:00 UTC slot
   workflow_dispatch:
     inputs:
       max_applies:

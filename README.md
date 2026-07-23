@@ -112,9 +112,15 @@ This scrapes, scores, and tailors resumes without sending an email or
 writing DOCX/PDF files — it dumps `outputs/digest_preview.html` so you can
 see exactly what the real digest will look like.
 
-**5. Turn on the schedule.** `.github/workflows/job_search.yml` runs on a
-weekday cron by default. Adjust the schedule to taste, or trigger it
-manually via the Actions tab's "Run workflow" button (with a dry-run option).
+**5. Run it — and optionally enable a daily schedule.** Both
+`.github/workflows/job_search.yml` (API mode) and
+`.github/workflows/job_search_native.yml` (Claude-native mode) are
+**manual-only by default** — trigger them via the Actions tab's "Run
+workflow" button (API mode also exposes a dry-run option). Manual-only
+is the safe default for a fork template: no accidental quota burn the
+moment someone adds secrets. Once you've had a successful manual run,
+uncomment the `schedule:` block at the top of the workflow file and
+adjust the cron to your timezone if you want a daily run.
 
 ## Commands
 
