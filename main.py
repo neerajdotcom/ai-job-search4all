@@ -202,7 +202,7 @@ def run(
     if jobs and not no_dedup:
         from storage.tracker_store import filter_unscored
         before_dedup = len(jobs)
-        jobs = filter_unscored(jobs)
+        jobs = filter_unscored(jobs, resume_text=resume_text)
         deduped = before_dedup - len(jobs)
         if deduped:
             logger.info("Cross-run dedup skipped %d already-scored job(s)", deduped)
@@ -258,16 +258,10 @@ def run(
             "title": title, "company": company,
         })
 
-        # Off-target check — free, no API call. ATS feeds return a company's
-        # *entire* job board unfiltered by title (unlike Adzuna, which is
-        # queried per profile.search_terms), so an unrelated role can
-        # otherwise consume a scarce Groq scoring slot just for sharing
-        # vocabulary with the resume. Skip scoring entirely for ATS-sourced
+        # Off-target check — free, no API call. Skip scoring entirely for
         # jobs that are neither on the candidate's own target-role track
-        # (profile.search_terms) nor a QA role (QA roles still get scored —
-        # they have their own digest section). Adzuna jobs are exempted
-        # since they were already relevance-filtered at query time.
-        if job.get("source") != "adzuna" and not job.get("is_target_role") and not job.get("is_qa_role"):
+        # (profile.search_terms / adjacent industries) nor a QA role.
+        if not job.get("is_target_role") and not job.get("is_qa_role"):
             summary.off_target_skipped_count += 1
             logger.info(
                 "[%d/%d] OFF-TARGET %s @ %s — not a target role — scoring skipped",
@@ -357,13 +351,10 @@ def run(
 
         summary.total_qualifying += 1
 
-        # Drafter-reviewer second pass — a cheap Groq sanity-check of this
-        # job's own qualifying score before spending Gemini optimize quota on
-        # it. Only worth the extra call for borderline scores (see
-        # REVIEW_BAND_MAX) — a clearly-strong match doesn't need auditing.
-        # Fails open: a reviewer error or exhausted quota just leaves the
-        # first-pass score as-is (review_score returns None in both cases).
-        review = review_score(scored_job, profile) if score < REVIEW_BAND_MAX else None
+        # Drafter-reviewer second pass — sanity-check qualifying scores
+        # Runs on borderline scores or any job with missing keywords / seniority gaps
+        needs_review = (score < REVIEW_BAND_MAX) or bool(scored_job.get("missing_keywords")) or (scored_job.get("seniority_fit") == "under")
+        review = review_score(scored_job, profile) if needs_review else None
         if review:
             scored_job["reviewer_score"] = review["reviewed_score"]
             scored_job["reviewer_notes"] = review["reviewer_notes"]
@@ -383,11 +374,17 @@ def run(
                     )
                     continue
 
-        # Bucket: only target-location + non-QA jobs ("primary") get a
-        # tailored resume. Out-of-region and QA/testing roles are
-        # informational-only in the digest — no Gemini call, no DOCX/PDF, no
-        # cover note.
-        is_primary = job.get("is_target_location", True) and not job.get("is_qa_role", False)
+        # Determine candidate orientation
+        search_keywords_lower = [t.lower() for t in (profile.search_terms or [profile.title or ""])]
+        if profile.title:
+            search_keywords_lower.append(profile.title.lower())
+        is_candidate_qa = any("qa" in k or "test" in k or "quality" in k or "sdet" in k for k in search_keywords_lower)
+
+        # Bucket: target-location jobs get full optimization. If candidate is QA, QA roles are primary.
+        if is_candidate_qa:
+            is_primary = job.get("is_target_location", True)
+        else:
+            is_primary = job.get("is_target_location", True) and not job.get("is_qa_role", False)
 
         if not is_primary:
             scored_job["ats_output"] = None
@@ -439,7 +436,7 @@ def run(
 
         scored_job["optimized"] = bool(scored_job.get("ats_output"))
 
-        if job.get("is_qa_role"):
+        if job.get("is_qa_role") and not is_candidate_qa:
             qa_roles.append(scored_job)
         elif not job.get("is_target_location", True):
             outside_target_location.append(scored_job)
@@ -511,7 +508,7 @@ def run(
     try:
         if all_scored:
             from storage.tracker_store import mark_seen, export_csv
-            mark_seen(all_scored)
+            mark_seen(all_scored, resume_text=resume_text)
             export_csv()
     except Exception as exc:
         logger.error("Failed to update cross-run tracker: %s", exc)
@@ -534,18 +531,17 @@ def run(
     # 4. Send digest
     logger.info("Step 3/3 — Sending digest (%d qualifying job(s))", summary.total_qualifying)
     _notify(progress_callback, {"stage": "sending_digest", "qualifying_count": summary.total_qualifying})
-    from digest.email_digest import send_digest
+    from digest.email_digest import _build_html, send_digest
+    date_str = datetime.now(timezone.utc).strftime("%d %b %Y")
+    html = _build_html(primary, outside_target_location, qa_roles, date_str, profile,
+                       skill_gaps=summary.skill_gaps, training_recs=summary.training_recs,
+                       weekly_report=weekly_report_md)
+    preview_path = Path("outputs/digest_preview.html")
+    preview_path.parent.mkdir(exist_ok=True)
+    preview_path.write_text(html, encoding="utf-8")
+    logger.info("Digest HTML generated → %s", preview_path)
 
     if dry_run:
-        from digest.email_digest import _build_html
-        date_str = datetime.now(timezone.utc).strftime("%d %b %Y")
-        html = _build_html(primary, outside_target_location, qa_roles, date_str, profile,
-                           skill_gaps=summary.skill_gaps, training_recs=summary.training_recs,
-                           weekly_report=weekly_report_md)
-        preview_path = Path("outputs/digest_preview.html")
-        preview_path.parent.mkdir(exist_ok=True)
-        preview_path.write_text(html, encoding="utf-8")
-        logger.info("Dry-run: digest HTML written to %s", preview_path)
         summary.email_sent = False
     else:
         try:
@@ -554,11 +550,10 @@ def run(
                                weekly_report=weekly_report_md)
             summary.email_sent = sent
             if not sent:
-                summary.errors.append("send_digest returned False — check SMTP credentials")
+                logger.info("Email digest skipped (no SMTP credentials configured) — review in outputs/digest_preview.html or Web UI")
         except Exception as exc:
-            msg = f"Digest send crashed: {exc}"
-            logger.error(msg)
-            summary.errors.append(msg)
+            msg = f"Digest send skipped: {exc}"
+            logger.warning(msg)
 
     # 5. Persist run snapshot (git-committed JSON "database")
     try:

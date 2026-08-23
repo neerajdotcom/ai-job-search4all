@@ -28,6 +28,10 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 _FETCH_TIMEOUT = 10
+_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+    "Accept": "application/json, text/html, */*",
+}
 
 # Greenhouse: company_name comes from the API response itself, so no display
 # name mapping is needed — just the board token (usually lowercase company name).
@@ -95,6 +99,7 @@ def scrape_greenhouse() -> list:
             resp = requests.get(
                 f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs",
                 params={"content": "true"},
+                headers=_HEADERS,
                 timeout=_FETCH_TIMEOUT,
             )
             resp.raise_for_status()
@@ -136,6 +141,7 @@ def scrape_lever() -> list:
             resp = requests.get(
                 f"https://api.lever.co/v0/postings/{slug}",
                 params={"mode": "json"},
+                headers=_HEADERS,
                 timeout=_FETCH_TIMEOUT,
             )
             resp.raise_for_status()
@@ -180,6 +186,7 @@ def scrape_ashby() -> list:
         try:
             resp = requests.get(
                 f"https://api.ashbyhq.com/posting-api/job-board/{slug}",
+                headers=_HEADERS,
                 timeout=_FETCH_TIMEOUT,
             )
             resp.raise_for_status()
@@ -219,6 +226,7 @@ def scrape_workable() -> list:
             resp = requests.get(
                 f"https://apply.workable.com/api/v1/widget/accounts/{slug}",
                 params={"details": "true"},
+                headers=_HEADERS,
                 timeout=_FETCH_TIMEOUT,
             )
             resp.raise_for_status()
@@ -257,6 +265,140 @@ def scrape_workable() -> list:
     return jobs
 
 
-def scrape_all_ats_jobs() -> list:
+def _probe_dynamic_target_company(company_name: str) -> list[dict]:
+    """Dynamically probe Greenhouse, Lever, Ashby, and Workable for a candidate's target company."""
+    if not company_name:
+        return []
+    
+    # Normalize company name to slug (e.g. "Pragmatic Play" -> "pragmaticplay", "Bad Robot Games" -> "badrobotgames")
+    clean_name = re.sub(r"[^\w\s-]", "", company_name).strip()
+    slug = re.sub(r"[\s_-]+", "", clean_name.lower())
+    hyphen_slug = re.sub(r"[\s_]+", "-", clean_name.lower())
+    slugs_to_try = list(dict.fromkeys([slug, hyphen_slug]))
+    
+    # Skip if already in hardcoded lists
+    if any(s in GREENHOUSE_COMPANIES for s in slugs_to_try) or any(s in LEVER_COMPANIES for s in slugs_to_try) or any(s in ASHBY_COMPANIES for s in slugs_to_try) or any(s in WORKABLE_COMPANIES for s in slugs_to_try):
+        return []
+
+    jobs = []
+    # 1. Try Greenhouse
+    for s in slugs_to_try:
+        try:
+            resp = requests.get(
+                f"https://boards-api.greenhouse.io/v1/boards/{s}/jobs",
+                params={"content": "true"},
+                headers=_HEADERS,
+                timeout=5,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                for item in data.get("jobs", []):
+                    posted_at = None
+                    raw_date = item.get("first_published") or item.get("updated_at")
+                    if raw_date:
+                        try:
+                            posted_at = datetime.fromisoformat(raw_date.replace("Z", "+00:00"))
+                        except Exception:
+                            pass
+                    jobs.append({
+                        "title": (item.get("title") or "").strip(),
+                        "company": item.get("company_name", company_name).strip(),
+                        "location": (item.get("location") or {}).get("name", "") or "",
+                        "jd_text": _strip_html(item.get("content", "")),
+                        "apply_url": item.get("absolute_url", ""),
+                        "source": "greenhouse",
+                        "posted_at": posted_at,
+                    })
+                if jobs:
+                    logger.info("  Dynamic Greenhouse '%s': found %d jobs", s, len(jobs))
+                    return jobs
+        except Exception:
+            pass
+
+    # 2. Try Ashby
+    for s in slugs_to_try:
+        try:
+            resp = requests.get(
+                f"https://api.ashbyhq.com/posting-api/job-board/{s}",
+                headers=_HEADERS,
+                timeout=5,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                for item in data.get("jobs", []):
+                    posted_at = None
+                    raw_date = item.get("publishedAt")
+                    if raw_date:
+                        try:
+                            posted_at = datetime.fromisoformat(raw_date.replace("Z", "+00:00"))
+                        except Exception:
+                            pass
+                    jobs.append({
+                        "title": (item.get("title") or "").strip(),
+                        "company": company_name,
+                        "location": (item.get("locationName") or ""),
+                        "jd_text": _strip_html(item.get("descriptionPlain", "") or item.get("descriptionHtml", "")),
+                        "apply_url": item.get("jobUrl", ""),
+                        "source": "ashby",
+                        "posted_at": posted_at,
+                    })
+                if jobs:
+                    logger.info("  Dynamic Ashby '%s': found %d jobs", s, len(jobs))
+                    return jobs
+        except Exception:
+            pass
+
+    # 3. Try Lever
+    for s in slugs_to_try:
+        try:
+            resp = requests.get(
+                f"https://api.lever.co/v0/postings/{s}",
+                params={"mode": "json"},
+                headers=_HEADERS,
+                timeout=5,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                if isinstance(data, list):
+                    for item in data:
+                        posted_at = None
+                        created_ms = item.get("createdAt")
+                        if created_ms:
+                            try:
+                                posted_at = datetime.fromtimestamp(created_ms / 1000, tz=timezone.utc)
+                            except Exception:
+                                pass
+                        categories = item.get("categories", {}) or {}
+                        jd_text = " ".join(filter(None, [item.get("descriptionPlain", ""), item.get("additionalPlain", "")]))
+                        jobs.append({
+                            "title": (item.get("text") or "").strip(),
+                            "company": company_name,
+                            "location": categories.get("location", "") or item.get("workplaceType", "") or "",
+                            "jd_text": jd_text,
+                            "apply_url": item.get("hostedUrl", ""),
+                            "source": "lever",
+                            "posted_at": posted_at,
+                        })
+                    if jobs:
+                        logger.info("  Dynamic Lever '%s': found %d jobs", s, len(jobs))
+                        return jobs
+        except Exception:
+            pass
+
+    return jobs
+
+
+def scrape_all_ats_jobs(profile=None) -> list:
     logger.info("Scraping direct employer ATS feeds (Greenhouse + Lever + Ashby + Workable)")
-    return scrape_greenhouse() + scrape_lever() + scrape_ashby() + scrape_workable()
+    base_jobs = scrape_greenhouse() + scrape_lever() + scrape_ashby() + scrape_workable()
+    
+    # Dynamically probe candidate target companies if profile is provided
+    target_jobs = []
+    if profile and getattr(profile, "target_companies", None):
+        logger.info("Probing ATS boards for %d candidate target companies", len(profile.target_companies))
+        for company in profile.target_companies:
+            dyn_jobs = _probe_dynamic_target_company(company)
+            if dyn_jobs:
+                target_jobs.extend(dyn_jobs)
+
+    return base_jobs + target_jobs

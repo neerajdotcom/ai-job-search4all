@@ -1,27 +1,37 @@
 {% extends "base.html" %}
-{% block title %}Pipeline — Job Search Dashboard{% endblock %}
+{% block title %}Pipeline Board — Job Search Dashboard{% endblock %}
 {% block content %}
-<h1>Application Pipeline</h1>
-<p class="meta-line">Drag a card to move it through the pipeline. Changes save instantly to the tracker.</p>
+<div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px;">
+  <div>
+    <h1>Application Pipeline Board</h1>
+    <p class="text-muted" style="font-size: 13.5px;">Drag and drop role cards across stages. Status updates persist instantly to the CRM store.</p>
+  </div>
+</div>
 
 <div id="kanbanBoard" class="kanban-board">
   {% for col in board.columns %}
   <div class="kanban-column">
     <div class="kanban-column-header">
-      {{ col.label }} <span class="kanban-count">{{ col.entries | length }}</span>
+      <span>{{ col.label }}</span>
+      <span class="kanban-count">{{ col.entries | length }}</span>
     </div>
     <div class="kanban-column-body" data-status="{{ col.status }}">
       {% for entry in col.entries %}
       <div class="kanban-card" draggable="true" data-key="{{ entry.key }}">
         <div class="kanban-card-title">{{ entry.title or "Untitled role" }}</div>
         <div class="kanban-card-company">{{ entry.company or "—" }}</div>
-        <div class="kanban-card-meta">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
           {% if entry.last_score is not none %}
-          <span class="badge" style="color:{{ score_color(entry.last_score) }};background:{{ score_bg(entry.last_score) }};">{{ entry.last_score }}%</span>
+          <span class="badge" style="color:{{ score_color(entry.last_score) }};background:{{ score_bg(entry.last_score) }}; font-weight: 700;">
+            {{ entry.last_score }}% Match
+          </span>
+          {% else %}
+          <span></span>
           {% endif %}
-          <span class="muted">{{ entry.source or "" }}</span>
+          <a href="{{ entry.apply_url | safe_url }}" target="_blank" rel="noopener noreferrer" style="font-size: 11.5px; font-weight: 550;">
+            Open ↗
+          </a>
         </div>
-        <a class="kanban-card-link" href="{{ entry.apply_url | safe_url }}" target="_blank" rel="noopener noreferrer">Open posting &rarr;</a>
       </div>
       {% endfor %}
     </div>
@@ -30,19 +40,19 @@
 </div>
 
 {% if board.closed %}
-<h2>Closed</h2>
-<div class="kanban-closed-row">
+<h2 style="margin-top: 32px;">Archived & Closed Opportunities</h2>
+<div style="display: flex; gap: 10px; flex-wrap: wrap;">
   {% for entry in board.closed %}
-  <div class="kanban-card kanban-card-closed">
+  <div class="kanban-card" style="opacity: 0.6; min-width: 220px;">
     <div class="kanban-card-title">{{ entry.title or "Untitled role" }}</div>
     <div class="kanban-card-company">{{ entry.company or "—" }}</div>
-    <span class="badge badge-neutral">{{ entry.status | replace("_", " ") }}</span>
+    <span class="badge badge-neutral">{{ entry.status | replace("_", " ") | title }}</span>
   </div>
   {% endfor %}
 </div>
 {% endif %}
 
-<div id="kanbanMessage" class="trigger-message"></div>
+<div id="kanbanMessage" class="trigger-message" style="margin-top: 14px;"></div>
 {% endblock %}
 
 {% block scripts %}

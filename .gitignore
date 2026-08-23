@@ -1,19 +1,43 @@
-# Secrets — never commit
+# Secrets & Personal Credentials — NEVER COMMIT
 .env
+.env.*
+!.env.example
 
-# Generated outputs
+# Personal Candidate Profiles & Resumes (Private)
+candidate_profile/config.yaml
+candidate_profile/profiles/*
+!candidate_profile/profiles/.gitkeep
+candidate_profile/*.docx
+candidate_profile/*.pdf
+candidate_profile/*.txt
+candidate_profile/*.json
+!candidate_profile/config.example.yaml
+
+# Run logs, traces, and candidate tracking history (Private)
+data/runs/*
+!data/runs/.gitkeep
+data/traces/*
+!data/traces/.gitkeep
+data/uploads/*
+!data/uploads/.gitkeep
+data/tracker.json
+data/tracker_export.csv
+
+# Generated outputs & tailored resume builds
 outputs/*
 !outputs/.gitkeep
 
-# Derived view of data/tracker.json (regenerated each run) — tracker.json
-# itself stays committed and canonical.
-data/tracker_export.csv
-
-# Python
+# Python bytecode & environments
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
 .venv/
 venv/
+env/
+.pytest_cache/
 
-# OS
+# OS & Editor files
 .DS_Store
+.idea/
+.vscode/
+*.swp

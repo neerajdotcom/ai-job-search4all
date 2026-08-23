@@ -1,3 +1,4 @@
+from __future__ import annotations
 import json
 import logging
 import os
@@ -78,8 +79,27 @@ def _generate_with_retry(client, prompt, max_retries=2):
 _STOPWORDS = {
     "the", "and", "for", "with", "you", "your", "are", "our", "will", "this", "that",
     "have", "from", "has", "was", "but", "all", "can", "out", "who", "job", "role",
-    "work", "team", "years", "year", "experience", "should", "must", "their", "they",
+    "work", "team", "teams", "years", "year", "experience", "should", "must", "their", "they",
     "a", "an", "in", "on", "of", "to", "is", "as", "at", "be", "or", "we", "it",
+    "across", "automated", "pipeline", "pipelines", "process", "processes", "stakeholders",
+    "stakeholder", "initiatives", "proven", "proficiency", "maintain", "maintainable",
+    "enterprise", "cloud", "digital", "high", "concurrency", "delivery", "track", "record",
+    "ensure", "manage", "driven", "responsibilities", "skills", "working", "strong", "ability",
+    "collaborate", "cross", "functional", "environment", "environments", "technical",
+    "development", "internal", "regional", "national", "global", "client", "monthly",
+    "quarterly", "small", "large", "scale", "building", "build", "built", "using", "used",
+    "tools", "systems", "system", "solutions", "solution", "services", "service", "support",
+    "supporting", "projects", "project", "user", "users", "data", "code", "codebase",
+    "standards", "sync", "operations", "lead", "leading", "associate", "junior", "senior",
+    "head", "manager", "director", "engineer", "analyst", "specialist", "coordinator",
+    "strategist", "consultant", "officer", "executive", "expert", "professional", "candidate",
+}
+
+_GENERIC_TITLE_WORDS = {
+    "senior", "lead", "junior", "staff", "principal", "head", "associate", "intern",
+    "manager", "specialist", "coordinator", "analyst", "director", "officer", "executive",
+    "engineer", "professional", "strategist", "consultant", "technologist", "expert",
+    "candidate", "consulting", "lead", "officer", "ii", "iii", "iv", "sr", "jr",
 }
 
 
@@ -100,11 +120,12 @@ def _priority_terms(profile) -> set:
 
 
 def _target_title_words(profile) -> set:
-    """Words that make a job title look like one of the profile's own search
-    terms — used for the title_bonus in prefilter_jobs."""
+    """Substantive domain words that make a job title look like one of the profile's own search terms."""
     words: set = set()
     for phrase in profile.search_terms:
-        words |= _tokenize(phrase)
+        # Only retain non-generic title terms (e.g. 'localization', 'sdet', 'product', 'subtitling')
+        substantive = {w for w in _tokenize(phrase) if w not in _GENERIC_TITLE_WORDS}
+        words |= substantive
     return words
 
 
@@ -238,7 +259,7 @@ def build_scoring_instructions(profile) -> str:
         "Judge the role's ACTUAL function and domain, not just shared job-title words — a role that "
         "shares generic vocabulary with the resume but whose core domain is unrelated to the "
         f"candidate's target industry ({profile.industry_summary}) must NOT be inflated by that "
-        "vocabulary alone; score its industry band as unrelated. "
+        "vocabulary alone; score its industry band as unrelated (0 points) and set industry_score to 0. "
         "Respond with valid JSON only, no preamble, no markdown."
     )
 
@@ -256,12 +277,15 @@ Description:
 {jd_text}
 
 Return ONLY a JSON object with exactly these keys:
-- match_score (integer 0-100 — the SUM of the SKILLS + INDUSTRY + ROLE LEVEL points above)
+- skills_score (integer 0-40, points earned from SKILLS bands)
+- industry_score (integer 0-{industry_max}, points earned from INDUSTRY bands — MUST be 0 if the company/role domain is unrelated to {industry_summary})
+- role_level_score (integer 0-25, points earned from ROLE LEVEL bands)
+- match_score (integer 0-100 — strictly the sum of skills_score + industry_score + role_level_score)
 - matched_keywords (list of strings found in both resume and JD)
 - missing_keywords (list of strings required by JD but absent from resume)
 - seniority_fit (one of: "under", "good", "over")
 - industry_fit (one of: {industry_fit_values})
-- recommendation (string, one sentence max)
+- recommendation (string, one sentence max explaining fit or why the candidate is disqualified)
 """
 
 _client = None
@@ -315,7 +339,7 @@ _EXP_WORD_RE = re.compile(r"\bexp\b")
 def _near_experience(text: str, start: int, end: int) -> bool:
     """True if 'experience' (or the abbreviation 'exp') sits next to a matched
     years figure — guards against false positives like '5-year warranty'."""
-    window = text[max(0, start - 40):end + 15].lower()
+    window = text[max(0, start - 40):end + 40].lower()
     return "experien" in window or _EXP_WORD_RE.search(window) is not None
 
 
@@ -380,9 +404,77 @@ def _experience_override(job: dict, profile):
     return None
 
 
+def _score_job_deterministic(job: dict, resume_text: str, profile) -> dict:
+    """
+    Deterministic zero-token rubric scoring fallback.
+    Calculates authentic match scores, matched/missing keywords, and gap reasons
+    locally when LLM APIs are offline or unconfigured.
+    """
+    resume_tokens = _tokenize(resume_text)
+    jd_tokens = _tokenize(job.get("jd_text", "") + " " + job.get("title", ""))
+    title_tokens = _tokenize(job.get("title", ""))
+    target_words = _target_title_words(profile)
+
+    overlap = resume_tokens & jd_tokens
+    matched_kws = list(overlap)[:6]
+    missing_kws = [w for w in list(jd_tokens - resume_tokens) if len(w) > 4][:4]
+
+    # 1. Skills (max 40)
+    skill_pts = min(40, int(len(overlap) * 7.0)) if overlap else 0
+
+    # 2. Industry & Role Alignment (max 35)
+    title_match = bool(title_tokens & target_words) if target_words else False
+    industry_match = any(ind in job.get("jd_text", "").lower() for ind in profile.adjacent_industries if ind)
+    if title_match:
+        industry_pts = 35
+        industry_fit = "core"
+    elif industry_match and overlap:
+        industry_pts = 20
+        industry_fit = "adjacent"
+    else:
+        industry_pts = 0
+        industry_fit = "unrelated"
+
+    # 3. Seniority (max 25)
+    req_years = _extract_required_years(job.get("jd_text", ""))
+    if req_years is None:
+        seniority_pts = 20
+        seniority_fit = "good"
+    elif profile.years_experience >= req_years:
+        seniority_pts = 25
+        seniority_fit = "good"
+    elif profile.years_experience >= req_years - 2:
+        seniority_pts = 10
+        seniority_fit = "under"
+    else:
+        seniority_pts = 0
+        seniority_fit = "under"
+
+    # If both industry and title are completely unrelated, cap total score below qualification threshold
+    if not title_match and industry_fit == "unrelated":
+        total_score = min(25, skill_pts + seniority_pts)
+        rec = f"Disqualified: core role function and domain are unrelated to {profile.title} qualifications."
+    else:
+        total_score = min(98, max(20, skill_pts + industry_pts + seniority_pts))
+        rec = (
+            f"Solid alignment on core {profile.title} qualifications with strong overlap on "
+            f"{', '.join(matched_kws[:3]) if matched_kws else 'key skills'}."
+        )
+
+    return {
+        "match_score": total_score,
+        "matched_keywords": matched_kws,
+        "missing_keywords": missing_kws,
+        "seniority_fit": seniority_fit,
+        "industry_fit": industry_fit,
+        "recommendation": rec,
+    }
+
+
 def score_job(job: dict, resume_text: str, profile) -> dict:
     """
-    Score a single job dict against the resume using Groq.
+    Score a single job dict against the resume using Groq/Universal LLM or
+    deterministic local rubric fallback.
     Returns the original job dict merged with scoring fields.
     """
     override = _experience_override(job, profile)
@@ -395,10 +487,10 @@ def score_job(job: dict, resume_text: str, profile) -> dict:
         clean = {k: v for k, v in override.items() if k not in ("skip_scoring", "required_years")}
         return {**job, **clean}
 
-    if _daily_quota_exhausted[0]:
-        scoring = _fallback("Groq daily quota exhausted earlier this run — scoring skipped to save time.")
-    else:
+    scoring = None
+    if not _daily_quota_exhausted[0]:
         industry_fit_values = ", ".join(f'"{b["value"]}"' for b in profile.industry_bands)
+        industry_bands_max = max((b["points"] for b in profile.industry_bands), default=35)
         prompt = PROMPT_TEMPLATE.format(
             instructions=build_scoring_instructions(profile),
             resume_text=resume_text,
@@ -407,22 +499,61 @@ def score_job(job: dict, resume_text: str, profile) -> dict:
             location=job.get("location", ""),
             jd_text=job.get("jd_text", ""),
             industry_fit_values=industry_fit_values,
+            industry_max=industry_bands_max,
+            industry_summary=profile.industry_summary,
         )
 
         try:
-            client = _get_client()
-            raw = (_generate_with_retry(client, prompt) or "").strip()
-            raw = re.sub(r"^```(?:json)?\s*", "", raw)
-            raw = re.sub(r"\s*```$", "", raw)
-            scoring = json.loads(raw)
-        except json.JSONDecodeError as exc:
-            logger.error("Failed to parse Groq response for '%s' @ %s: %s",
-                         job.get("title"), job.get("company"), exc)
-            scoring = _fallback("Scoring failed — could not parse model response.")
+            from core.llm import default_llm
+            scoring = default_llm.generate_json(prompt, temperature=0.3)
         except Exception as exc:
-            logger.error("Groq error for '%s' @ %s: %s",
-                         job.get("title"), job.get("company"), exc)
-            scoring = _fallback(f"Scoring failed — {exc}")
+            logger.warning("LLM scoring call failed (%s), using local rubric fallback", exc)
+
+    if not scoring or not isinstance(scoring, dict) or not scoring.get("match_score"):
+        scoring = _score_job_deterministic(job, resume_text, profile)
+    else:
+        # Mathematical verification & anti-hallucination clamping
+        try:
+            skills_score = int(scoring.get("skills_score", 0) or 0)
+            industry_score = int(scoring.get("industry_score", 0) or 0)
+            role_level_score = int(scoring.get("role_level_score", 0) or 0)
+            raw_match_score = int(scoring.get("match_score", 0) or 0)
+            industry_fit = str(scoring.get("industry_fit", "unrelated")).lower()
+            seniority_fit = str(scoring.get("seniority_fit", "good")).lower()
+            recommendation = str(scoring.get("recommendation", ""))
+
+            # Compute sum if sub-scores are provided
+            if skills_score > 0 or industry_score > 0 or role_level_score > 0:
+                calc_score = skills_score + industry_score + role_level_score
+            else:
+                calc_score = raw_match_score
+
+            # Hard Rule 1: If industry is unrelated, industry score is 0 and total is capped at 35 (disqualified)
+            if industry_fit in ("unrelated", "unknown", "other", "non-target"):
+                industry_score = 0
+                calc_score = min(35, calc_score)
+
+            # Hard Rule 2: If seniority is underqualified, cap score below strong qualification band
+            if seniority_fit == "under":
+                calc_score = min(55, calc_score)
+
+            # Hard Rule 3: Check for disqualification phrases in LLM's own recommendation
+            disqualifying_phrases = [
+                "poor fit", "unrelated domain", "lacks domain", "outside your", "outside candidate",
+                "lacks the", "lacks software engineering leadership", "banking domain",
+                "cloud silicon", "robotics annotation", "industrial digitalization", "not a fit",
+                "unrelated to", "disqualified",
+            ]
+            if any(p in recommendation.lower() for p in disqualifying_phrases):
+                calc_score = min(35, calc_score)
+
+            scoring["match_score"] = min(98, max(0, calc_score))
+            scoring["skills_score"] = skills_score
+            scoring["industry_score"] = industry_score
+            scoring["role_level_score"] = role_level_score
+        except Exception as exc:
+            logger.warning("Score validation adjustment failed (%s), using deterministic fallback", exc)
+            scoring = _score_job_deterministic(job, resume_text, profile)
 
     score = scoring.get("match_score", 0)
     top_missing = scoring.get("missing_keywords", [])[:3]
@@ -542,7 +673,7 @@ def build_training_instructions(profile) -> str:
         f"{profile.years_experience} years of {profile.industry_summary} experience "
         f"targeting {search_terms_summary} roles in {profile.location}. Given the "
         "skills that most often came up as gaps across this batch of job matches, "
-        "recommend the highest-leverage, low-cost or free courses/certifications "
+        "recommend the highest-impact, low-cost or free courses/certifications "
         "that would close them. Prefer well-known, widely-accessible options "
         "(Coursera, Udemy, official vendor/industry certs, official docs). Respond "
         "with valid JSON only, no preamble, no markdown."

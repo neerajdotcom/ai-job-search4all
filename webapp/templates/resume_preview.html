@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tailored Resume — {{ resume.name }} (for {{ resume.target_company }})</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-page: #08090d;
+      --surface-toolbar: #12151f;
+      --border-default: rgba(255, 255, 255, 0.12);
+      --accent-primary: #0284c7;
+      --text-primary: #ffffff;
+      --text-muted: #94a3b8;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-page);
+      color: #1e293b;
+      font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      line-height: 1.5;
+    }
+
+    /* Floating Action Bar (Screen Only) */
+    .resume-top-bar {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: var(--surface-toolbar);
+      border-bottom: 1px solid var(--border-default);
+      padding: 12px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+    }
+
+    .top-bar-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .back-btn {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 500;
+      padding: 6px 12px;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-default);
+      transition: all 0.15s ease;
+    }
+
+    .back-btn:hover {
+      background: rgba(255, 255, 255, 0.1);
+      color: #ffffff;
+    }
+
+    .resume-title-badge {
+      color: var(--text-primary);
+      font-size: 13.5px;
+      font-weight: 600;
+    }
+
+    .target-badge {
+      color: #38bdf8;
+      background: rgba(56, 189, 248, 0.12);
+      border: 1px solid rgba(56, 189, 248, 0.25);
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 9999px;
+    }
+
+    .top-bar-actions {
+      display: flex;
+      gap: 10px;
+    }
+
+    .btn-action {
+      padding: 7px 16px;
+      font-size: 13px;
+      font-weight: 600;
+      border-radius: 6px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      text-decoration: none;
+      transition: all 0.15s ease;
+    }
+
+    .btn-print {
+      background: linear-gradient(135deg, #0d9488, #0284c7);
+      color: #ffffff;
+      border: none;
+    }
+
+    .btn-print:hover {
+      filter: brightness(1.1);
+      transform: translateY(-1px);
+    }
+
+    .btn-docx {
+      background: rgba(255, 255, 255, 0.07);
+      color: var(--text-primary);
+      border: 1px solid var(--border-default);
+    }
+
+    .btn-docx:hover {
+      background: rgba(255, 255, 255, 0.14);
+    }
+
+    /* Clean Paper Canvas */
+    .paper-container {
+      max-width: 820px;
+      margin: 32px auto 64px;
+      padding: 0 16px;
+    }
+
+    .resume-sheet {
+      background: #ffffff;
+      color: #0f172a;
+      border-radius: 8px;
+      padding: 48px 56px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+      font-size: 10.5pt;
+      line-height: 1.45;
+    }
+
+    /* Resume Document Typography */
+    .doc-header {
+      text-align: center;
+      border-bottom: 2px solid #0284c7;
+      padding-bottom: 14px;
+      margin-bottom: 18px;
+    }
+
+    .doc-name {
+      font-size: 22pt;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: #0f172a;
+      line-height: 1.2;
+      margin-bottom: 4px;
+    }
+
+    .doc-contact {
+      font-size: 9.5pt;
+      color: #475569;
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .doc-section {
+      margin-bottom: 18px;
+    }
+
+    .section-title {
+      font-size: 11pt;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #0369a1;
+      border-bottom: 1px solid #e2e8f0;
+      padding-bottom: 3px;
+      margin-bottom: 8px;
+    }
+
+    .summary-text {
+      font-size: 10pt;
+      color: #1e293b;
+      line-height: 1.5;
+    }
+
+    .competencies-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 12px;
+    }
+
+    .comp-item {
+      font-size: 9.5pt;
+      color: #0f172a;
+      background: #f1f5f9;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-weight: 500;
+    }
+
+    .job-entry {
+      margin-bottom: 14px;
+    }
+
+    .job-entry-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 3px;
+      flex-wrap: wrap;
+    }
+
+    .job-role {
+      font-size: 11pt;
+      font-weight: 700;
+      color: #0f172a;
+    }
+
+    .job-company {
+      font-size: 10.5pt;
+      font-weight: 600;
+      color: #334155;
+    }
+
+    .job-dates {
+      font-size: 9.5pt;
+      font-weight: 500;
+      color: #64748b;
+      font-style: italic;
+    }
+
+    .bullets-list {
+      list-style-type: disc;
+      padding-left: 20px;
+      margin-top: 4px;
+    }
+
+    .bullet-item {
+      font-size: 9.5pt;
+      color: #1e293b;
+      margin-bottom: 3px;
+      line-height: 1.45;
+    }
+
+    .edu-entry {
+      margin-bottom: 6px;
+      font-size: 9.5pt;
+      color: #1e293b;
+    }
+
+    /* Print Stylesheet */
+    @media print {
+      @page {
+        margin: 0.5in;
+        size: auto;
+      }
+
+      body {
+        background: #ffffff !important;
+        color: #000000 !important;
+      }
+
+      .resume-top-bar {
+        display: none !important;
+      }
+
+      .paper-container {
+        max-width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+      }
+
+      .resume-sheet {
+        box-shadow: none !important;
+        border-radius: 0 !important;
+        padding: 0 !important;
+      }
+
+      .comp-item {
+        background: none !important;
+        border: 1px solid #cbd5e1 !important;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Action Bar -->
+  <div class="resume-top-bar">
+    <div class="top-bar-left">
+      <a href="/match/{{ session_id }}" class="back-btn">&larr; Back to Matches</a>
+      <span class="resume-title-badge">{{ resume.name }} &bull; {{ resume.title }}</span>
+      {% if resume.target_company %}
+      <span class="target-badge">Tailored for {{ resume.target_company }}</span>
+      {% endif %}
+    </div>
+    <div class="top-bar-actions">
+      <a href="/api/resume/download/{{ session_id }}/{{ job_idx }}" class="btn-action btn-docx">
+        📥 Download .DOCX
+      </a>
+      <button type="button" onclick="window.print()" class="btn-action btn-print">
+        🖨️ Save as PDF / Print
+      </button>
+    </div>
+  </div>
+
+  <!-- Printable Paper View -->
+  <div class="paper-container">
+    <div class="resume-sheet">
+      <!-- Header -->
+      <div class="doc-header">
+        <h1 class="doc-name">{{ resume.name }}</h1>
+        <div class="doc-contact">
+          {% if resume.title %}<span><strong>{{ resume.title }}</strong></span>{% endif %}
+          {% if resume.location %}<span>&bull; {{ resume.location }}</span>{% endif %}
+          {% if resume.email %}<span>&bull; {{ resume.email }}</span>{% endif %}
+          {% if resume.phone %}<span>&bull; {{ resume.phone }}</span>{% endif %}
+          {% if resume.linkedin %}<span>&bull; {{ resume.linkedin }}</span>{% endif %}
+        </div>
+      </div>
+
+      <!-- Summary -->
+      {% if resume.summary %}
+      <div class="doc-section">
+        <div class="section-title">Professional Summary</div>
+        <p class="summary-text">{{ resume.summary }}</p>
+      </div>
+      {% endif %}
+
+      <!-- Competencies -->
+      {% if resume.competencies %}
+      <div class="doc-section">
+        <div class="section-title">Core Competencies & Expertise</div>
+        <div class="competencies-grid">
+          {% for c in resume.competencies %}
+          <span class="comp-item">&bull; {{ c }}</span>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      <!-- Professional Experience -->
+      {% if resume.experience %}
+      <div class="doc-section">
+        <div class="section-title">Professional Experience</div>
+        {% for exp in resume.experience %}
+        <div class="job-entry">
+          <div class="job-entry-header">
+            <div>
+              <span class="job-role">{{ exp.role }}</span>
+              {% if exp.company %}<span class="job-company"> &bull; {{ exp.company }}</span>{% endif %}
+            </div>
+            {% if exp.dates %}<span class="job-dates">{{ exp.dates }}</span>{% endif %}
+          </div>
+          {% if exp.bullets %}
+          <ul class="bullets-list">
+            {% for bullet in exp.bullets %}
+            <li class="bullet-item">{{ bullet }}</li>
+            {% endfor %}
+          </ul>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% elif resume.experience_lines %}
+      <div class="doc-section">
+        <div class="section-title">Professional Experience</div>
+        {% for line in resume.experience_lines %}
+        <div class="exp-item">{{ line }}</div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      <!-- Education & Credentials -->
+      {% if resume.education %}
+      <div class="doc-section">
+        <div class="section-title">Education & Credentials</div>
+        {% for edu in resume.education %}
+        <div class="edu-entry">&bull; {{ edu }}</div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      <!-- Certifications & Training -->
+      {% if resume.certifications %}
+      <div class="doc-section">
+        <div class="section-title">Certifications & Training</div>
+        {% for cert in resume.certifications %}
+        <div class="edu-entry">&bull; {{ cert }}</div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+</body>
+</html>

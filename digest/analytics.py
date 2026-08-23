@@ -13,6 +13,8 @@ PM/Delivery/Producer role nor a QA role) are excluded everywhere here —
 their last_score is a placeholder 0, never a real evaluation, and would
 skew every average/conversion rate below if counted.
 """
+from __future__ import annotations
+
 
 from storage import tracker_store
 

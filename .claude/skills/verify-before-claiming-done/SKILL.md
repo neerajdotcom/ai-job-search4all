@@ -1,27 +1,22 @@
 ---
 name: verify-before-claiming-done
-description: Verification discipline for this repo's no-test-framework setup — how to actually confirm a change works before reporting it done. Use before claiming any change to scorer/, optimizer/, digest/, scraper/, storage/, or webapp/ is complete. Complements the repo-wide /verify skill with the specific checks this codebase relies on in place of a test suite (--dry-run, per-module __main__ blocks, real-fixture regression, grep-after-rename, compile-check, read-back-the-actual-output).
+description: Verification discipline — how to confirm a change works before reporting it done. Use before claiming any change to scorer/, optimizer/, digest/, scraper/, storage/, or webapp/ is complete. Enforces running the full pytest suite (.agent/skills/regression-and-edge-tester), edge cases, and pre-flight checks.
 ---
 
-# Verification without a test framework
+# Verification Protocol
 
-This repo has no automated test suite (`CLAUDE.md`: "verification is via
-`--dry-run` and the per-module `__main__` blocks"). That makes each of the
-following load-bearing, not optional.
+Always execute the automated test suites and pre-flight checks before marking any task complete:
 
-## Every module is self-checkable
-Each pipeline module carries a `__main__` block exercising itself against a
-realistic sample (a sample job, a sample resume) — e.g.
-`python -m scorer.match_scorer`, `python -m optimizer.resume_optimizer`,
-`python -m digest.email_digest`. Run the relevant one standalone after
-touching that module, before running the full pipeline.
+## 1. Automated Regression & Edge-Case Suite
+Execute the full test harness:
+```bash
+.venv/bin/pytest tests/ -v
+.venv/bin/pytest tests/test_edge_and_negative.py -v
+```
+All 109+ tests must pass with zero failures and zero regressions.
 
-## `--dry-run` is the standing pre-flight check
-`python main.py --dry-run` runs every real stage (scrape → prefilter →
-score → optimize) but stops short of irreversible steps (sending the email,
-final DOCX/PDF writes to a tracked location) and dumps
-`outputs/digest_preview.html` instead. This is what to run before ever
-claiming a pipeline-level change "works" — not just "it compiled."
+## 2. Standing Pre-Flight Check (`--dry-run`)
+`python main.py --dry-run` runs every real stage (scrape → prefilter → score → optimize) but stops short of sending emails or mutating production tracker state, dumping `outputs/digest_preview.html` for manual inspection.
 
 ## Regress against real fixtures when available
 Validate against the actual production `.docx` templates and real profile

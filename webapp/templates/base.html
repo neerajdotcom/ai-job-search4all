@@ -1,38 +1,125 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>{% block title %}Job Search Dashboard{% endblock %}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=5.0">
+  <title>{% block title %}Job Scout — AI Job Match & Fast-Apply Platform{% endblock %}</title>
   <script>
-    if (localStorage.getItem("theme") === "dark") {
-      document.documentElement.setAttribute("data-theme", "dark");
-    }
+    const savedTheme = localStorage.getItem("theme") || "dark";
+    document.documentElement.setAttribute("data-theme", savedTheme);
   </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora:wght@500;600&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap">
   <link rel="stylesheet" href="/static/style.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 </head>
 <body>
+  <!-- Ambient Motion Aurora & Micro-Grid Background -->
+  <div class="ambient-mesh" aria-hidden="true">
+    <div class="aurora-blob aurora-1"></div>
+    <div class="aurora-blob aurora-2"></div>
+    <div class="aurora-blob aurora-3"></div>
+    <div class="bg-grid-dots"></div>
+  </div>
+
+  <!-- Linear-Style Frosted Navbar -->
   <nav class="navbar">
-    <a class="brand" href="/">Job Search Dashboard</a>
-    <div class="nav-links">
-      <a href="/">Home</a>
-      <a href="/runs">Runs</a>
-      <a href="/kanban">Pipeline</a>
-      <a href="/trigger">Trigger</a>
-      <button id="themeToggle" class="theme-toggle" type="button" aria-label="Toggle dark mode">🌙</button>
+    <div class="nav-container">
+      <div class="nav-brand-area">
+        <a class="brand" href="/">
+          <span class="brand-logo">⚡</span>
+          <span class="brand-name">Job Scout</span>
+          <span class="brand-badge">
+            <span class="radar-dot"></span>
+            Pro AI
+          </span>
+        </a>
+      </div>
+
+      <div class="nav-links">
+        <a href="/" class="nav-link {% if request.url.path == '/' %}active{% endif %}">Find Matches</a>
+        <a href="/candidate" class="nav-link {% if request.url.path in ['/candidate', '/profile'] %}active{% endif %}">Candidate Hub</a>
+        <a href="/runs" class="nav-link {% if '/runs' in request.url.path %}active{% endif %}">Pipeline Runs</a>
+        <a href="/kanban" class="nav-link {% if '/kanban' in request.url.path %}active{% endif %}">CRM Board</a>
+        <a href="/trigger" class="nav-link {% if '/trigger' in request.url.path %}active{% endif %}">Scout Batch</a>
+        <a href="/api/traces" class="nav-link" target="_blank" title="Inspect OpenTelemetry JSON Traces">Traces ↗</a>
+        <button id="themeToggle" class="theme-toggle" type="button" aria-label="Toggle Theme" title="Toggle Light/Dark Theme">🌙</button>
+      </div>
+
+      <!-- Mobile Top Bar Actions -->
+      <div class="mobile-top-actions">
+        <button id="mobileCmdkBtn" class="btn-copy mobile-cmdk-btn" type="button" aria-label="Search and Commands" title="Open Command Menu">🔍</button>
+        <button id="themeToggleMobile" class="theme-toggle" type="button" aria-label="Toggle Theme" title="Toggle Light/Dark Theme">🌙</button>
+      </div>
     </div>
   </nav>
+
+  <!-- Mobile Bottom Navigation Bar (iOS / Android Ergonomics) -->
+  <nav class="mobile-bottom-nav" aria-label="Mobile Navigation">
+    <a href="/" class="mobile-nav-item {% if request.url.path == '/' %}active{% endif %}">
+      <span class="mobile-nav-icon">⚡</span>
+      <span class="mobile-nav-label">Scout</span>
+    </a>
+    <a href="/candidate" class="mobile-nav-item {% if request.url.path in ['/candidate', '/profile'] %}active{% endif %}">
+      <span class="mobile-nav-icon">👤</span>
+      <span class="mobile-nav-label">Candidate</span>
+    </a>
+    <a href="/kanban" class="mobile-nav-item {% if '/kanban' in request.url.path %}active{% endif %}">
+      <span class="mobile-nav-icon">📋</span>
+      <span class="mobile-nav-label">Kanban</span>
+    </a>
+    <a href="/runs" class="mobile-nav-item {% if '/runs' in request.url.path %}active{% endif %}">
+      <span class="mobile-nav-icon">📜</span>
+      <span class="mobile-nav-label">Runs</span>
+    </a>
+    <a href="/trigger" class="mobile-nav-item {% if '/trigger' in request.url.path %}active{% endif %}">
+      <span class="mobile-nav-icon">⚙️</span>
+      <span class="mobile-nav-label">Batch</span>
+    </a>
+  </nav>
+
   <main class="container">
     {% block content %}{% endblock %}
   </main>
+
+  <footer class="app-footer">
+    <div class="footer-inner">
+      <span>⚡ <strong>Job Scout</strong> &bull; Production Job Discovery & Assisted Application Engine</span>
+      <span class="text-muted">Strict Grounding Verified &bull; Zero Fabrications &bull; Direct ATS Portals</span>
+    </div>
+  </footer>
+
+  <!-- Organic SVG Micro-Noise Grain Layer -->
+  <div class="noise-overlay" aria-hidden="true"></div>
+
+  <!-- Global Toast Notification Center -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <!-- Global Command Palette (Cmd+K / Ctrl+K) Modal (Linear / CMDK Style) -->
+  <div id="cmdPaletteBackdrop" class="cmdk-backdrop hidden" aria-hidden="true">
+    <div class="cmdk-dialog" role="dialog" aria-modal="true" aria-label="Command Menu">
+      <div class="cmdk-input-wrapper">
+        <span class="cmdk-search-icon">🔍</span>
+        <input type="text" id="cmdPaletteInput" class="cmdk-input" placeholder="Type a command, job title, or navigate (Press 'ESC' to exit)..." autocomplete="off" spellcheck="false">
+        <kbd class="cmdk-badge">ESC</kbd>
+      </div>
+      <div id="cmdPaletteList" class="cmdk-list" role="listbox">
+        <!-- Dynamically populated via dashboard.js -->
+      </div>
+      <div class="cmdk-footer">
+        <span><kbd>↑</kbd><kbd>↓</kbd> to navigate</span>
+        <span><kbd>↵</kbd> to select</span>
+        <span><kbd>ESC</kbd> to close</span>
+      </div>
+    </div>
+  </div>
+
   <script src="/static/dashboard.js"></script>
   <script>
     document.addEventListener("DOMContentLoaded", function () {
       if (window.initThemeToggle) window.initThemeToggle();
+      if (window.initCommandPalette) window.initCommandPalette();
     });
   </script>
   {% block scripts %}{% endblock %}

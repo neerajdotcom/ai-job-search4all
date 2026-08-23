@@ -14,6 +14,7 @@ Personal use only: automated access to LinkedIn is against their Terms of
 Service. Keep volume low (this module fetches a handful of pages per run,
 same order of magnitude as a person manually paging through search results).
 """
+from __future__ import annotations
 
 import logging
 import re
@@ -28,8 +29,9 @@ logger = logging.getLogger(__name__)
 
 BASE_URL = "https://www.linkedin.com/jobs-guest/jobs/api"
 _HEADERS = {
-    "User-Agent": "Mozilla/5.0 (compatible; ai-job-search4all/1.0)",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
 }
 
 _MAX_RETRIES = 4
@@ -171,8 +173,19 @@ def scrape_linkedin_guest(profile) -> list[dict]:
     all_jobs: list[dict] = []
     seen_ids: set[str] = set()
 
+    # Formulate domain-targeted search terms
+    search_queries = list(profile.search_terms or [])
+    generic_titles = {"project manager", "senior project manager", "program manager", "delivery manager", "operations manager", "lead", "director"}
+    if getattr(profile, "adjacent_industries", None):
+        for term in list(profile.search_terms or []):
+            if term.lower().strip() in generic_titles:
+                for ind in profile.adjacent_industries[:2]:
+                    combined_query = f"{term} {ind}"
+                    if combined_query not in search_queries:
+                        search_queries.append(combined_query)
+
     for location in locations:
-        for term in profile.search_terms:
+        for term in search_queries:
             try:
                 logger.info("  Searching LinkedIn (guest): '%s' in '%s'", term, location)
                 results = search_jobs(term, location)
@@ -189,7 +202,7 @@ def scrape_linkedin_guest(profile) -> list[dict]:
 
     logger.info(
         "LinkedIn (guest): fetched %d raw entries across %d search location(s) × %d term(s)",
-        len(all_jobs), len(locations), len(profile.search_terms),
+        len(all_jobs), len(locations), len(search_queries),
     )
     return all_jobs
 

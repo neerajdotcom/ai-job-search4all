@@ -6,6 +6,8 @@ digest and the webapp dashboard so the two presentations can't drift apart
 (e.g. a new industry_fit value only handled in one place).
 """
 
+from __future__ import annotations
+
 _SENIORITY_COLORS = {
     "good":  ("#065f46", "#d1fae5"),
     "under": ("#92400e", "#fef3c7"),

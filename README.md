@@ -1,174 +1,125 @@
-# job-search-agent
+# 🚀 Job Scout: Observable AI Job Search & Recommendation Agent
 
-A free-tier, single-user, automated job-search pipeline. Each run scrapes
-job boards, scores postings against your résumé, tailors a résumé + cover
-note for the ones that qualify, and emails you a digest — all running on
-free API tiers, with no server to host and no data leaving your own GitHub
-repo.
+An open-for-all, observable AI job-matching agent. Anyone can paste their résumé or upload a file, instantly scrape live job boards (LinkedIn, Remotive, Greenhouse, Lever, Ashby, Workable, Adzuna), evaluate fit (0–100%), review honest skill gap explanations, and receive tailored Fast-Apply packs with direct 1-click links to job portals.
 
-Every candidate-specific detail — name, title, target location, search
-terms, scoring rubric, résumé file — lives in one file you generate from
-your own résumé. There is no hardcoded candidate anywhere in the code.
+> **The human applies. The agent never auto-submits.** Every recommendation is grounded against verified résumé facts with strict anti-fabrication guardrails.
 
-## What it does, each run
-1. Scrapes LinkedIn's public guest job search (zero API key) + optionally Adzuna (your country) + optionally direct employer ATS boards for your search terms
-2. Locally pre-filters by keyword overlap (free, no API calls), then scores the top candidates against your résumé (Groq)
-3. Tailors a resume — a submittable **PDF** + an editable DOCX — for qualifying jobs (Gemini), capped per run to protect free-tier quota
-4. Emails you one HTML digest: match table, per-job recommendations, and "Fast-Apply Packs" (cover note + screening Q&A)
+---
 
-It never auto-submits an application anywhere — the Fast-Apply Pack is
-copy-paste material you use manually.
+## 🌟 Key Features
 
-## Zero-key mode
+* **⚡ Instant Open-For-All Matcher**: Paste your résumé text or drop a `.docx`/`.pdf` in the web UI. On-the-fly profiling immediately searches active openings.
+* **🌐 Multi-Source Zero-Key Sourcing**:
+  * **LinkedIn Guest API**: Public unauthenticated guest job search (zero keys required).
+  * **Remotive API**: High-quality remote tech, product, engineering, and management listings (zero keys required).
+  * **Direct Employer ATS Feeds**: Live Greenhouse, Lever, Ashby, and Workable open positions.
+  * **Adzuna**: High-volume syndicated aggregator (free tier).
+* **🧠 Universal Multi-Model Engine**: Pluggable support for **Groq** (free fast scoring), **Google Gemini** (free tailoring), **OpenAI**, **Anthropic**, and **Ollama** (local offline models).
+* **🛡️ Strict Anti-Fabrication & Grounding Validator**: Validates that all metrics (percentages, dollar amounts, multipliers), companies, and career claims in tailored materials exist in the candidate's ground-truth CV.
+* **🔎 Dynamic Query Reformulation**: If a niche search yields few initial matches, the agent dynamically broadens queries to find adjacent roles.
+* **📊 Deep Observability & Tracing**: Step-by-step trace tree with latency, token usage, and cost estimations. Seamlessly connects to **Comet Opik** or logs local JSON traces.
+* **🧪 100% Offline Automated Test Suite**: Comprehensive `pytest` test suite running without API keys or network calls.
+* **✉️ Direct Portal Redirects & Sharing**: 1-click apply links to original portals, Fast-Apply copy-to-clipboard packs, and email digest sharing.
 
-This repo runs two ways:
+---
 
-- **API mode** (`python main.py`, described below) — scoring and résumé
-  tailoring run on Gemini/Groq's free tiers. Fast, high-volume, needs API
-  keys.
-- **Claude-native mode** — scoring, tailoring, **and profile onboarding**
-  happen as **Claude Code's own reasoning** instead of separate LLM API
-  calls. If you're already running this from Claude Code, you need **zero
-  additional API keys** — not even Adzuna or Gemini, since job sourcing
-  defaults to LinkedIn's public guest search endpoints and profile
-  extraction runs inline. Use it interactively:
+## 🚀 Quick Start
 
-  ```
-  /setup-native path/to/your_resume.docx      # first time only
-  /scrape-native
-  /apply-native https://example.com/some/job/posting
-  ```
-
-  or unattended via `.github/workflows/job_search_native.yml`, authenticated
-  with a single `CLAUDE_CODE_OAUTH_TOKEN` secret (get one with
-  `claude setup-token`) — no Gemini/Groq/Adzuna keys at all. Gmail secrets
-  are still optional if you want an email digest; the run persists its
-  snapshot and outputs either way.
-
-  Before turning on the schedule, run `python -m native.cli verify` to
-  pre-flight the deterministic pipeline, then follow
-  [`docs/verify-native.md`](docs/verify-native.md) for the manual checks.
-
-  See `native/CLAUDE.md` for how this mode reuses the same deterministic
-  scraping/DOCX-patching/PDF-rendering code as API mode — only the
-  LLM-shaped steps move from an API call to Claude's own reasoning.
-
-Pick whichever fits: API mode for scale (scoring dozens of jobs a day
-cheaply), Claude-native mode for zero setup and zero recurring API cost.
-
-## Deploy your own copy
-
-**1. Get the code.** Use this repo as a GitHub template (or fork it) into
-your own repository.
-
-**2. Add your secrets.** In your new repo's Settings → Secrets and
-variables → Actions, add:
-
-| Secret | What it's for |
-|---|---|
-| `GEMINI_API_KEY` | Google AI Studio free tier — résumé tailoring |
-| `GROQ_API_KEY` | Groq free tier — job scoring |
-| `ADZUNA_APP_ID` / `ADZUNA_APP_KEY` | Adzuna's free job-search API — **optional**, LinkedIn's public guest search works with zero keys |
-| `GMAIL_USER` / `GMAIL_APP_PASSWORD` | A Gmail account + [app password](https://myaccount.google.com/apppasswords) to send the digest from |
-| `DIGEST_RECIPIENT` | Where the digest email is sent |
-
-All of these have free tiers with no credit card required. **Using
-Claude-native mode instead?** Skip this table entirely — see "Zero-key mode"
-above, you only need a `CLAUDE_CODE_OAUTH_TOKEN` (and optionally the Gmail
-secrets for an email digest).
-
-**3. Build your profile.** Clone your new repo locally, install deps
-(`pip install -r requirements.txt`), copy `.env.example` to `.env` and fill
-in the same values as above (for local runs), then run:
-
-```
-python setup_profile.py --resume your_resume.docx
+### 1. Install Dependencies
+```bash
+git clone https://github.com/neerajdotcom/ai-job-search4all.git
+cd ai-job-search4all
+pip install -r requirements.txt
+cp .env.example .env
 ```
 
-This makes **one** Gemini call (your own free-tier key — no new cost) to
-extract a draft `candidate_profile/config.yaml` from your résumé: name,
-title, years of experience, location, search terms, industries, and the
-per-employer keyword map used to locate your résumé's bullet points later.
-
-**Review the draft before your first real run** — it's a starting point, not
-gospel, exactly like the pipeline's own résumé-tailoring rule never to
-fabricate. Open `candidate_profile/config.yaml` and check:
-- the extracted fields actually match your résumé
-- `target_companies` (optional — for a "⭐ target company" highlight) and `excluded_companies` (e.g. your current employer)
-- the notice-period placeholder in `context` (used verbatim for screening-question answers)
-- `adzuna_country_code` (Adzuna's two-letter country code)
-
-If you'd rather write the config by hand instead of using the LLM draft,
-copy `candidate_profile/config.example.yaml` to `candidate_profile/config.yaml`
-and fill it in yourself — every field is commented.
-
-**4. Try a dry run.**
-
+### 2. Run Offline Tests
+```bash
+make test
+# or: pytest tests/ -v
 ```
+
+### 3. Launch the Web Portal
+```bash
+make app
+# or: python -m webapp
+```
+Open **`http://127.0.0.1:8000/`** in your browser:
+1. Paste your résumé into the text area.
+2. Select your target location or check *Include Remote / Worldwide roles*.
+3. Click **⚡ Find My Matches & Tailor Applications**.
+4. Watch the live progress stream and browse your tailored recommendations!
+
+---
+
+## 💻 CLI & Batch Pipeline Modes
+
+For unattended daily runs (e.g. GitHub Actions cron or local batch execution):
+
+```bash
+# 1. Onboarding: generate profile from resume
+python setup_profile.py --resume path/to/your_resume.docx
+
+# 2. Dry-run pipeline
 python main.py --dry-run
+
+# 3. Live pipeline execution
+python main.py
 ```
 
-This scrapes, scores, and tailors resumes without sending an email or
-writing DOCX/PDF files — it dumps `outputs/digest_preview.html` so you can
-see exactly what the real digest will look like.
+### Zero-Key Claude-Native Mode
+If running inside Claude Code / AGY:
+```bash
+/setup-native path/to/resume.docx
+/scrape-native
+/apply-native https://example.com/job/posting
+```
 
-**5. Run it — and optionally enable a daily schedule.** Both
-`.github/workflows/job_search.yml` (API mode) and
-`.github/workflows/job_search_native.yml` (Claude-native mode) are
-**manual-only by default** — trigger them via the Actions tab's "Run
-workflow" button (API mode also exposes a dry-run option). Manual-only
-is the safe default for a fork template: no accidental quota burn the
-moment someone adds secrets. Once you've had a successful manual run,
-uncomment the `schedule:` block at the top of the workflow file and
-adjust the cron to your timezone if you want a daily run.
+---
 
-## Commands
+## 📁 Repository Structure
 
-**API mode:**
-- One-time onboarding: `python setup_profile.py --resume your_resume.docx`
-- Run the full pipeline: `python main.py`
-- Dry run: `python main.py --dry-run`
-- Force a full re-score, bypassing the cross-run dedup tracker: `python main.py --no-dedup`
-- Use a specific profile or résumé override: `python main.py --profile path/to/config.yaml` / `--resume path/to/resume.docx`
-- Local dashboard (browse run history/job matches, trigger runs from a UI): `python -m webapp` → `http://127.0.0.1:8000/`
+```
+├── core/                       # Universal AI engine & Opik/local tracer
+│   ├── llm.py                  # Multi-provider client (Groq, Gemini, OpenAI, Ollama, Anthropic)
+│   └── tracer.py               # Observability span manager & trace logger
+├── scraper/                    # Sourcing adapters
+│   ├── remotive_scraper.py     # Zero-key remote job feed (Remotive)
+│   ├── linkedin_guest_scraper.py # Zero-key LinkedIn guest scraper
+│   ├── ats_scraper.py          # Direct Greenhouse, Lever, Ashby, Workable feeds
+│   └── job_scraper.py          # Multi-board orchestrator & location/role tagger
+├── scorer/                     # Fit evaluation & quality gates
+│   ├── match_scorer.py         # 100-point merit rubric scoring & reviewer pass
+│   ├── fabrication_validator.py # Grounding & anti-hallucination validation
+│   └── query_reformulator.py   # Dynamic search query expansion loop
+├── optimizer/                  # Tailoring & document generation
+│   └── resume_optimizer.py     # DOCX paragraph patching & LibreOffice PDF render
+├── webapp/                     # Modern FastAPI web dashboard & instant match portal
+│   ├── app.py                  # REST API & SSE live streaming
+│   ├── run_manager.py          # Async session runner & queue manager
+│   ├── templates/              # Jinja2 responsive templates (home, instant_results, kanban)
+│   └── static/                 # Styles, charts, and SSE client scripts
+├── tests/                      # Automated offline pytest suite
+│   ├── conftest.py             # Shared fixtures & mock data
+│   ├── test_loader.py          # Profile loader tests
+│   ├── test_llm.py             # LLM client & routing tests
+│   ├── test_scrapers.py        # Scraper parsing tests
+│   ├── test_scorer.py          # Fit scoring & rubric tests
+│   ├── test_fabrication_validator.py # Grounding validation tests
+│   ├── test_optimizer.py       # DOCX XML patching tests
+│   ├── test_tracer.py          # Observability trace tests
+│   └── test_webapp.py          # Web API & endpoint tests
+├── Makefile                    # Developer shortcuts (test, app, run, dry-run)
+└── pyproject.toml              # Standard Python project definition
+```
 
-**Claude-native mode** (run these inside a Claude Code session):
-- `/setup-native path/to/resume.docx` — zero-key profile onboarding (equivalent of `setup_profile.py` without needing a Gemini key)
-- `/scrape-native [focus area]` — zero-key job search + quick fit pass
-- `/apply-native <url or pasted JD>` — full drafter-reviewer tailoring workflow
-- Pre-flight: `python -m native.cli verify` (runs the deterministic zero-key pipeline end-to-end and cleans up after itself)
+---
 
-See `CLAUDE.md` for the full architecture — per-module docs live in nested
-`CLAUDE.md` files under `scraper/`, `scorer/`, `optimizer/`, `digest/`,
-`storage/`, `webapp/`, `mcp_server/`, `native/`.
+## 🔒 Privacy & Grounding Guarantees
 
-## Optional sources
-- `ENABLE_LINKEDIN_SCRAPE=false` — **on by default.** Disable if you'd
-  rather not scrape LinkedIn's public guest endpoints at all (personal-use
-  only per their ToS; kept low-volume by design — see `scraper/CLAUDE.md`).
-- `ENABLE_ATS_SCRAPING=false` — **on by default.** Direct-employer boards
-  (Greenhouse/Lever/Ashby/Workable public APIs, zero API key). Company
-  lists in `scraper/ats_scraper.py` are hand-picked and currently
-  iGaming/gaming-focused — add your own target employers' board slugs to
-  broaden coverage for your industry.
-- `ENABLE_CRAWL4AI=true` — scrapes large job-board sites (Naukri, Indeed,
-  Foundit, Instahyre, Wellfound) via headless Chromium. Most of these boards
-  block datacenter IPs, so this only works reliably from a residential IP —
-  run it locally, not in GitHub Actions.
+* **No Automated Submissions**: The agent will never apply on your behalf or risk your job-board accounts. Fast-Apply packs are structured copy-paste materials.
+* **No Fabricated Facts**: Strict preservation of verified quantifiable metrics (percentages, dollar amounts, multipliers).
+* **Data Ownership**: No candidate data is retained on external servers; local traces are stored directly in `data/traces/`.
 
-## What stays private
-Nothing about your résumé or search leaves your own GitHub repo and your own
-free-tier API accounts. `data/runs/` and `data/tracker.json` are committed to
-your repo as run history (this is intentional — see `storage/CLAUDE.md`,
-"git is the database"); generated resume/cover-letter files in `outputs/` are
-gitignored and never committed.
+---
 
-## Acknowledgements
-Claude-native mode's architecture — Claude Code's own reasoning doing fit
-scoring and résumé tailoring instead of a separate LLM API, structured as
-slash-commands/skills — is directly inspired by
-[MadsLorentzen/ai-job-search](https://github.com/MadsLorentzen/ai-job-search)
-(MIT). The zero-key LinkedIn scraper (`scraper/linkedin_guest_scraper.py`) is
-a Python port of that repo's `linkedin-search` skill, which itself credits
-[mikkelkrogsholm/skills](https://github.com/mikkelkrogsholm/skills) for the
-job-search CLI pattern.

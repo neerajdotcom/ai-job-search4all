@@ -22,6 +22,7 @@ Usage:
     python -m native.cli extract-resume-text --resume path/to/resume.pdf
     python -m native.cli write-profile --extracted-json - --resume-dest-name resume.docx < extracted.json
 """
+from __future__ import annotations
 
 import argparse
 import json

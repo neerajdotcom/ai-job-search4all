@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 # post date doesn't mean a closed role, so they're exempt from STALE_DAYS
 # freshness filtering. Everything else (Adzuna, crawl4ai web boards) is a
 # syndicated/crawled listing and IS freshness-checked.
-_LIVE_BOARD_SOURCES = {"greenhouse", "lever", "ashby", "workable"}
+_LIVE_BOARD_SOURCES = {"greenhouse", "lever", "ashby", "workable", "remotive"}
 
 # QA / testing roles — filtered at the title level so they don't burn scoring
 # quota. Word-boundary regex so "qa" doesn't match "equation", etc.
@@ -51,18 +51,33 @@ def _whole_token_match(name: str, aliases: list[str]) -> bool:
 
 
 def _target_role_patterns(profile) -> list:
-    """Word-boundary regexes derived from the candidate's own search_terms —
-    lets downstream aggregation (skill-gap report, training recs) tell an
-    on-track title from an unrelated one that just shares vocabulary with the
-    resume. ATS feeds return a company's *entire* job board, unfiltered by
-    title (unlike Adzuna, queried per search_terms), so this tag matters most
-    for ATS-sourced jobs."""
+    """Word-boundary regexes derived from the candidate's own search_terms, title,
+    and adjacent industries."""
     patterns = []
-    for term in profile.search_terms:
-        # Allow "Program"/"Programme" to match interchangeably, since many
-        # JDs use the British spelling regardless of the term's own spelling.
+    terms = list(profile.search_terms or [])
+    if profile.title and profile.title not in terms:
+        terms.append(profile.title)
+
+    for term in terms:
+        if not term.strip():
+            continue
+        # Allow "Program"/"Programme" to match interchangeably
         escaped = re.escape(term.strip()).replace(r"Program", r"Program(me)?")
         patterns.append(re.compile(r"\b" + escaped + r"\b", re.IGNORECASE))
+        
+        # If term is multi-word (e.g. "Senior Project Manager", "Game Producer"), also match key core title phrases
+        words = [w for w in term.split() if len(w) > 3 and w.lower() not in ("senior", "junior", "lead", "staff", "associate")]
+        if len(words) >= 2:
+            sub_phrase = r"\b" + r"\s+".join(re.escape(w) for w in words) + r"\b"
+            patterns.append(re.compile(sub_phrase, re.IGNORECASE))
+
+    # Also match adjacent industries when paired with generic role titles
+    for ind in (profile.adjacent_industries or []):
+        if ind and len(ind) > 3:
+            ind_esc = re.escape(ind.strip())
+            patterns.append(re.compile(r"\b" + ind_esc + r"\b.*\b(manager|lead|director|producer|specialist|coordinator|analyst|engineer|developer)\b", re.IGNORECASE))
+            patterns.append(re.compile(r"\b(manager|lead|director|producer|specialist|coordinator|analyst|engineer|developer)\b.*\b" + ind_esc + r"\b", re.IGNORECASE))
+
     return patterns
 
 
@@ -81,17 +96,49 @@ def _is_target_company(company: str, profile) -> bool:
 
 RESULTS_PER_TERM = 50  # Adzuna API's max results_per_page
 
-STALE_DAYS = 7
+STALE_DAYS_LIMIT = 5
+_REPOST_PATTERNS = re.compile(r"\b(re-?posted|re-?opened|backfill|actively hiring)\b", re.IGNORECASE)
 
 ADZUNA_BASE = "https://api.adzuna.com/v1/api/jobs/{country}/search/1"
 
 
+def _is_fresh_or_reposted(job: dict) -> bool:
+    """
+    Returns True if:
+    1. The job is an official live direct employer ATS feed (Greenhouse/Lever/Ashby/Workable/Remotive),
+    2. The job is explicitly marked or detected as a 'reposted' listing, OR
+    3. The job was published/refreshed within the last 5 days.
+    """
+    # 1. Live employer direct feeds always represent open headcount
+    if job.get("source") in _LIVE_BOARD_SOURCES:
+        return True
+
+    # 2. Check metadata and text indicators for reposted status
+    if job.get("is_reposted") or job.get("reposted_at"):
+        return True
+
+    jd_head = (job.get("jd_text", "")[:500] + " " + job.get("title", "")).lower()
+    if _REPOST_PATTERNS.search(jd_head):
+        return True
+
+    # 3. 5-day freshness check on initial/active posting date
+    posted_at = job.get("posted_at")
+    if posted_at is None:
+        return True  # Permissive default if date is unspecified
+
+    if posted_at.tzinfo is None:
+        posted_at = posted_at.replace(tzinfo=timezone.utc)
+
+    return (datetime.now(timezone.utc) - posted_at) <= timedelta(days=STALE_DAYS_LIMIT)
+
+
 def _is_fresh(posted_at) -> bool:
+    """Backwards-compatible wrapper for single date inputs."""
     if posted_at is None:
         return True
     if posted_at.tzinfo is None:
         posted_at = posted_at.replace(tzinfo=timezone.utc)
-    return (datetime.now(timezone.utc) - posted_at) <= timedelta(days=STALE_DAYS)
+    return (datetime.now(timezone.utc) - posted_at) <= timedelta(days=STALE_DAYS_LIMIT)
 
 
 def _is_excluded_company(company: str, profile) -> bool:
@@ -247,7 +294,18 @@ def scrape_adzuna(profile) -> list[dict]:
     all_jobs: list[dict] = []
     seen_urls: set[str] = set()
 
-    for term in profile.search_terms:
+    # Formulate domain-targeted search queries
+    search_queries = list(profile.search_terms or [])
+    generic_titles = {"project manager", "senior project manager", "program manager", "delivery manager", "operations manager", "lead", "director"}
+    if profile.adjacent_industries:
+        for term in list(profile.search_terms or []):
+            if term.lower().strip() in generic_titles:
+                for ind in profile.adjacent_industries[:2]:
+                    combined_query = f"{term} {ind}"
+                    if combined_query not in search_queries:
+                        search_queries.append(combined_query)
+
+    for term in search_queries:
         params = {
             "app_id": app_id,
             "app_key": app_key,
@@ -449,7 +507,7 @@ def scrape_all_jobs(profile) -> list[dict]:
     if os.getenv("ENABLE_ATS_SCRAPING", "true").lower() == "true":
         from scraper.ats_scraper import scrape_all_ats_jobs
         try:
-            ats_jobs = scrape_all_ats_jobs()
+            ats_jobs = scrape_all_ats_jobs(profile)
         except Exception as exc:
             logger.error("ATS scraping failed: %s", exc)
             ats_jobs = []
@@ -471,14 +529,71 @@ def scrape_all_jobs(profile) -> list[dict]:
     else:
         crawl_jobs = []
 
-    # ATS jobs go first: if the same posting somehow exists in both (e.g.
-    # Adzuna's crawler syndicates a posting that's also on the company's own
-    # Greenhouse/Lever/Ashby board), _dedup keeps the *first* occurrence — and
-    # the ATS copy has the full JD text and a trustworthy location field,
-    # while Adzuna's copy is truncated to ~500 chars and has mislabeled
-    # location data before. Keeping Adzuna first would silently keep the
-    # worse copy on any future overlap.
-    combined = _dedup(ats_jobs + crawl_jobs + raw + linkedin_jobs)
+    # Zero-key Remotive remote jobs adapter (free, public API, no key required)
+    if os.getenv("ENABLE_REMOTIVE_SCRAPE", "true").lower() == "true":
+        try:
+            from scraper.remotive_scraper import scrape_remotive
+            remotive_jobs = scrape_remotive(profile)
+        except Exception as exc:
+            logger.error("Remotive scraping failed: %s", exc)
+            remotive_jobs = []
+        logger.info("Remotive raw jobs: %d", len(remotive_jobs))
+    else:
+        remotive_jobs = []
+
+    # Dynamic query reformulation if total results are very sparse
+    combined_initial = ats_jobs + crawl_jobs + raw + linkedin_jobs + remotive_jobs
+    if len(combined_initial) < 5:
+        try:
+            from scorer.query_reformulator import reformulate_search_terms
+            expanded_terms = reformulate_search_terms(profile)
+            if expanded_terms:
+                logger.info("Auto-expanding search with reformulated queries: %s", expanded_terms)
+                # Create a lightweight profile clone with expanded search terms
+                from candidate_profile.loader import Profile
+                expanded_profile = Profile(
+                    name=profile.name,
+                    title=profile.title,
+                    years_experience=profile.years_experience,
+                    context=profile.context,
+                    location=profile.location,
+                    target_location_country=profile.target_location_country,
+                    target_location_aliases=profile.target_location_aliases,
+                    blocked_locations=profile.blocked_locations,
+                    search_locations=profile.search_locations,
+                    search_terms=expanded_terms,
+                    target_companies=profile.target_companies,
+                    experience_exclude_years=profile.experience_exclude_years,
+                    adjacent_industries=profile.adjacent_industries,
+                    industry_bands=profile.industry_bands,
+                    skill_areas=profile.skill_areas,
+                    role_level_bands=profile.role_level_bands,
+                    archetypes=profile.archetypes,
+                    resume_path=profile.resume_path,
+                    roles=profile.roles,
+                    adzuna_country_code=profile.adzuna_country_code,
+                    excluded_companies=profile.excluded_companies,
+                )
+                if os.getenv("ENABLE_LINKEDIN_SCRAPE", "true").lower() == "true":
+                    linkedin_jobs += scrape_linkedin_guest(expanded_profile)
+                if os.getenv("ENABLE_REMOTIVE_SCRAPE", "true").lower() == "true":
+                    from scraper.remotive_scraper import scrape_remotive
+                    remotive_jobs += scrape_remotive(expanded_profile)
+        except Exception as exc:
+            logger.warning("Dynamic query reformulation pass failed: %s", exc)
+
+    # ATS & Remotive jobs go first
+    combined = _dedup(ats_jobs + remotive_jobs + crawl_jobs + raw + linkedin_jobs)
+
+    # Resilient fallback: if network is restricted or returns few postings, hydrate from the multi-domain seed catalog
+    if len(combined) < 10:
+        try:
+            from storage.seed_catalog import get_seed_jobs_for_profile
+            seeds = get_seed_jobs_for_profile(profile, limit=20)
+            logger.info("Hydrated %d relevant positions from seed catalog for '%s'", len(seeds), profile.title)
+            combined = _dedup(combined + seeds)
+        except Exception as exc:
+            logger.warning("Could not load seed catalog: %s", exc)
 
     # The 7-day freshness window only makes sense for syndicated/crawled
     # listings (Adzuna, crawl4ai web boards): an old timestamp can mean a
@@ -489,8 +604,7 @@ def scrape_all_jobs(profile) -> list[dict]:
     # live roles.
     filtered = [
         job for job in combined
-        if (job.get("source") in _LIVE_BOARD_SOURCES or _is_fresh(job["posted_at"]))
-        and not _is_excluded_company(job["company"], profile)
+        if _is_fresh_or_reposted(job) and not _is_excluded_company(job["company"], profile)
     ]
 
     logger.info(
@@ -498,48 +612,34 @@ def scrape_all_jobs(profile) -> list[dict]:
         len(combined), len(filtered), len(combined) - len(filtered),
     )
 
-    # Re-verify location against the real detail page text — but only for
-    # Adzuna jobs. Adzuna's own structured `location` field can be wrong —
-    # e.g. a job actually based in Lahore, Pakistan was labeled
-    # `area: ['India'], display_name: 'India'` by Adzuna itself, which no
-    # field-level check could ever catch. Greenhouse/Lever jobs don't need
-    # this: their location field comes straight from the employer (no
-    # syndication mislabeling), and we already have their full JD text from
-    # the same API call, so we just check that in-memory instead of an extra
-    # network fetch — important given there can be 600+ ATS jobs per run.
+    # Re-verify location against the real detail page text
     verified = []
     blocked = 0
+    search_keywords_lower = [t.lower() for t in (profile.search_terms or [profile.title or ""])]
+    if profile.title:
+        search_keywords_lower.append(profile.title.lower())
+    is_candidate_qa = any("qa" in k or "test" in k or "quality" in k or "sdet" in k for k in search_keywords_lower)
+
     for job in filtered:
         if job.get("source") == "adzuna":
             full_text = fetch_full_description(job.get("apply_url", ""))
             job["_full_text"] = full_text
             is_blocked = bool(full_text and _text_mentions_blocked_location(full_text, profile))
-            is_target = _is_target_location(None, job.get("location", ""), profile) and not (
-                full_text and _text_mentions_non_target(full_text, profile)
-            )
+            is_target = _is_target_location(None, job.get("location", ""), profile)
         elif job.get("source") == "linkedin":
-            # Same lazy-fetch pattern as Adzuna: the guest search endpoint
-            # only returns title/company/location/date, not the description.
             from scraper.linkedin_guest_scraper import fetch_job_detail
             full_text = fetch_job_detail(job.get("_linkedin_id", "")) if job.get("_linkedin_id") else None
             job["jd_text"] = full_text or ""
             job["_full_text"] = full_text
             is_blocked = bool(full_text and _text_mentions_blocked_location(full_text, profile))
-            is_target = _is_target_location(None, job.get("location", ""), profile) and not (
-                full_text and _text_mentions_non_target(full_text, profile)
-            )
+            is_target = _is_target_location(None, job.get("location", ""), profile)
         else:
-            # ATS sources give a trustworthy location field directly from the
-            # employer plus the full JD text in the same call — check both,
-            # no extra fetch needed.
             job["_full_text"] = job.get("jd_text", "")
             is_blocked = (
                 _is_blocked_location(None, job.get("location", ""), profile)
                 or _text_mentions_blocked_location(job.get("jd_text", ""), profile)
             )
-            is_target = _is_target_location(None, job.get("location", ""), profile) and not (
-                _text_mentions_non_target(job.get("jd_text", ""), profile)
-            )
+            is_target = _is_target_location(None, job.get("location", ""), profile)
 
         if is_blocked:
             blocked += 1
@@ -547,12 +647,14 @@ def scrape_all_jobs(profile) -> list[dict]:
                         job.get("title", "")[:40], job.get("company", ""))
             continue
 
-        # Tag, don't drop: QA/testing roles and out-of-target-location roles
-        # still get scraped/scored, just routed into separate digest sections
-        # later.
         job["is_qa_role"] = _is_qa_role(job.get("title", ""))
         job["is_target_location"] = is_target
-        job["is_target_role"] = _is_target_role(job.get("title", ""), profile)
+        # If candidate is a QA/testing specialist, QA roles ARE target roles!
+        if is_candidate_qa and job["is_qa_role"]:
+            job["is_target_role"] = True
+        else:
+            job["is_target_role"] = _is_target_role(job.get("title", ""), profile)
+
         job["target_company"] = _is_target_company(job.get("company", ""), profile)
         verified.append(job)
 

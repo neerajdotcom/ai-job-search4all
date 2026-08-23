@@ -5,124 +5,419 @@
 <h1>Run not found</h1>
 <p class="empty-state">No run with id <code>{{ run_id }}</code>.</p>
 {% else %}
-<h1>Run {{ run.run_id }}</h1>
+
+<!-- Header & Quick Run Metrics -->
+<div class="results-header-card">
+  <div class="results-header-left">
+    <h1>Run {{ run.run_id }}</h1>
+    <p class="profile-subtitle">
+      Source: <span class="badge badge-neutral">{{ run.source }}</span> &bull;
+      Mode: <strong>{{ "Dry run" if run.dry_run else "Live" }}</strong> &bull;
+      Started: {{ run.started_at }}
+      {% if run.github_run_url %}&bull; <a href="{{ run.github_run_url }}" target="_blank">GitHub Actions</a>{% endif %}
+    </p>
+  </div>
+  <div class="form-actions">
+    <a href="/runs" class="btn btn-outline">&larr; Back to Runs</a>
+  </div>
+</div>
+
 <div class="cards">
   <div class="card"><div class="card-value">{{ run.total_scraped }}</div><div class="card-label">Scraped</div></div>
   <div class="card"><div class="card-value">{{ run.total_scored }}</div><div class="card-label">Scored</div></div>
-  <div class="card"><div class="card-value">{{ run.total_qualifying }}</div><div class="card-label">Qualifying</div></div>
-  <div class="card"><div class="card-value">{{ run.ghost_flagged_count or 0 }}</div><div class="card-label">Ghost flagged</div></div>
-  <div class="card"><div class="card-value">{{ run.off_target_skipped_count or 0 }}</div><div class="card-label">Off-target skipped</div></div>
-  <div class="card"><div class="card-value">{{ "Yes" if run.email_sent else "No" }}</div><div class="card-label">Email sent</div></div>
+  <div class="card"><div class="card-value" style="color: var(--good-fg);">{{ run.total_qualifying }}</div><div class="card-label">Qualifying Matches</div></div>
+  <div class="card"><div class="card-value">{{ run.ghost_flagged_count or 0 }}</div><div class="card-label">Ghost Flagged</div></div>
+  <div class="card"><div class="card-value">{{ run.off_target_skipped_count or 0 }}</div><div class="card-label">Off-Target Skipped</div></div>
 </div>
 
-<p class="meta-line">
-  Source: <span class="badge badge-neutral">{{ run.source }}</span>
-  &middot; Mode: {{ "Dry run" if run.dry_run else "Live" }}
-  &middot; Started: {{ run.started_at }}
-  {% if run.github_run_url %}&middot; <a href="{{ run.github_run_url }}">GitHub Actions run</a>{% endif %}
-</p>
-
 {% if run.errors %}
-<div class="error-box">
-  <strong>Errors ({{ run.errors|length }}):</strong>
+<div class="error-box" style="margin: 20px 0;">
+  <strong>Notice ({{ run.errors|length }}):</strong>
   <ul>{% for err in run.errors %}<li>{{ err }}</li>{% endfor %}</ul>
 </div>
 {% endif %}
 
-{% if run.skill_gaps %}
-<h2>Skill Gaps This Run</h2>
-<p class="meta-line">Keywords most often missing across this run's scored jobs.</p>
-<div class="pill-row">
-  {% for g in run.skill_gaps %}<span class="pill pill-bad">{{ g.skill }} &times;{{ g.count }}</span>{% endfor %}
+<!-- Interactive Filter Toolbar (Information Control) -->
+<div class="filter-toolbar">
+  <div class="toolbar-left">
+    <div class="search-input-wrapper">
+      <span class="search-icon">🔍</span>
+      <input type="text" id="jobSearchInput" placeholder="Filter by title, company, keyword (Press '/' to focus)...">
+    </div>
+    <div class="filter-chips">
+      <button type="button" class="filter-chip active" data-filter="all">All ({{ run.jobs|length }})</button>
+      <button type="button" class="filter-chip" data-filter="90">≥ 90% Match</button>
+      <button type="button" class="filter-chip" data-filter="80">≥ 80% Match</button>
+      <button type="button" class="filter-chip" data-filter="qualifying">Qualifying Only</button>
+      <button type="button" class="filter-chip" data-filter="remote">Remote</button>
+      <button type="button" class="filter-chip" data-filter="target_co">⭐ Target Co</button>
+    </div>
+  </div>
+  <div class="toolbar-right">
+    <span class="text-muted" id="visibleJobCount">{{ run.jobs|length }} matches visible</span>
+  </div>
 </div>
+
+<!-- Scored Matches Table -->
+<div class="recommendations-container">
+  <table class="data-table" id="jobsTable">
+    <thead>
+      <tr>
+        <th>Role Title</th>
+        <th>Company</th>
+        <th>Match</th>
+        <th>Seniority</th>
+        <th>Industry</th>
+        <th>Source</th>
+        <th>QC / Warnings</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for job in run.jobs %}
+      {% set score = job.match_score or 0 %}
+      {% set sfg, sbg = seniority_badge_colors(job.seniority_fit or "") %}
+      {% set ifg, ibg = industry_badge_colors(job.industry_fit or "") %}
+      <tr class="job-item-row"
+          data-index="{{ loop.index0 }}"
+          data-title="{{ (job.title or '') | lower }}"
+          data-company="{{ (job.company or '') | lower }}"
+          data-location="{{ (job.location or '') | lower }}"
+          data-score="{{ score }}"
+          data-qualifying="{{ 'true' if job.qualifying else 'false' }}"
+          data-remote="{{ 'true' if 'remote' in (job.location or '')|lower else 'false' }}"
+          data-target-co="{{ 'true' if job.target_company else 'false' }}">
+        <td>
+          <a href="#" class="open-drawer-link" data-index="{{ loop.index0 }}" style="font-weight: 600;">
+            {{ job.title }}
+          </a>
+          {% if not job.is_live|default(true) %}<span class="pill pill-bad" title="Link may be inactive">⚠</span>{% endif %}
+        </td>
+        <td>
+          {% if job.target_company %}<span title="Target Company">⭐</span> {% endif %}
+          {{ job.company }}
+        </td>
+        <td>
+          <span class="badge" style="color:{{ score_color(score) }};background:{{ score_bg(score) }}; font-weight: 700;">
+            {{ score }}%
+          </span>
+        </td>
+        <td><span class="badge" style="color:{{ sfg }};background:{{ sbg }};">{{ (job.seniority_fit or "—") | title }}</span></td>
+        <td><span class="badge" style="color:{{ ifg }};background:{{ ibg }};">{{ industry_label(job.industry_fit) or "—" }}</span></td>
+        <td><span class="source-badge">{{ job.source or "ats" }}</span></td>
+        <td>
+          {% if job.quality_warnings %}
+            <span class="pill pill-bad" title="{{ job.quality_warnings|join('; ') }}">⚠ {{ job.quality_warnings|length }}</span>
+          {% elif job.ghost_flagged %}
+            <span class="pill pill-bad">👻 Ghost</span>
+          {% elif job.off_target_skipped %}
+            <span class="pill pill-bad">🎯 Off-target</span>
+          {% else %}
+            <span class="text-muted">—</span>
+          {% endif %}
+        </td>
+        <td>
+          <button type="button" class="btn btn-outline btn-small open-drawer-btn" data-index="{{ loop.index0 }}">
+            ⚡ Fast Apply
+          </button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- Slide-Over Fast-Apply Sheet / Drawer -->
+<div id="drawerBackdrop" class="drawer-backdrop">
+  <div class="drawer-panel" id="drawerPanel">
+    <div class="drawer-header">
+      <div class="drawer-header-info">
+        <h2 id="drawerTitle">Role Title</h2>
+        <div id="drawerCompany" class="drawer-company">Company &bull; Location</div>
+      </div>
+      <button type="button" id="drawerCloseBtn" class="drawer-close-btn" aria-label="Close drawer">&times;</button>
+    </div>
+
+    <div class="drawer-body">
+      <!-- 1-Click Fast Actions -->
+      <div class="drawer-actions-row">
+        <a id="drawerPortalBtn" href="#" target="_blank" rel="noopener noreferrer" class="btn btn-primary">
+          <span>⚡</span> Open Application Portal ↗
+        </a>
+        <a id="drawerDownloadBtn" href="#" class="btn btn-secondary">
+          <span>📄</span> Download Tailored Resume
+        </a>
+      </div>
+
+      <!-- Match Score & Fit Explanation -->
+      <div>
+        <div class="drawer-section-title">AI Match Evaluation</div>
+        <p id="drawerRecommendation" style="font-size: 13.5px; line-height: 1.5; color: var(--ink); margin-bottom: 10px;"></p>
+        <div id="drawerKeywords" class="keywords-row"></div>
+      </div>
+
+      <!-- Tailored Cover Note Studio (Angle Switcher) -->
+      <div>
+        <div class="drawer-section-title">Tailored Cover Note (1-Click Copy)</div>
+        <div class="tabs-header" id="coverNoteTabs">
+          <button type="button" class="tab-btn active" data-angle="domain">Domain-Fit Angle</button>
+          <button type="button" class="tab-btn" data-angle="track">Track-Record Angle</button>
+          <button type="button" class="tab-btn" data-angle="growth">Growth Angle</button>
+        </div>
+        <div class="copyable-box">
+          <button type="button" class="copy-mini-btn" id="copyDrawerCoverBtn">Copy</button>
+          <div id="drawerCoverNoteText">Loading tailored note...</div>
+        </div>
+      </div>
+
+      <!-- Quick Screening Answers -->
+      <div id="drawerScreeningSection">
+        <div class="drawer-section-title">Pre-Filled Screening Answers</div>
+        <div id="drawerScreeningAnswers" style="display: flex; flex-direction: column; gap: 8px;"></div>
+      </div>
+
+      <!-- Application Status & Notes -->
+      <div>
+        <div class="drawer-section-title">Pipeline Status</div>
+        <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 12px;">
+          <select id="drawerStatusSelect" style="flex: 1; padding: 6px 10px; background: var(--bg); border: 1px solid var(--border); color: var(--ink); border-radius: var(--radius-sm);">
+            <option value="scored">Scored</option>
+            <option value="applied">Applied</option>
+            <option value="interview_scheduled">Interview Scheduled</option>
+            <option value="offer">Offer</option>
+            <option value="rejected">Rejected</option>
+            <option value="archived">Archived</option>
+          </select>
+          <button type="button" class="btn btn-outline btn-small" id="drawerStatusSaveBtn">Save Status</button>
+        </div>
+        <span id="drawerStatusMsg" class="text-muted" style="font-size: 12px;"></span>
+      </div>
+    </div>
+  </div>
+</div>
+
 {% endif %}
+{% endblock %}
 
-{% if run.training_recs %}
-<h2>Recommended Training</h2>
-<p class="meta-line">Courses / certifications to close the most-recurring gaps above.</p>
-<ul>
-  {% for r in run.training_recs %}
-  <li><strong>{{ r.recommendation }}</strong>{% if r.skill %} <span class="muted">(closes: {{ r.skill }})</span>{% endif %}{% if r.why %} — {{ r.why }}{% endif %}</li>
-  {% endfor %}
-</ul>
-{% endif %}
+{% block scripts %}
+<script>
+  window.CURRENT_RUN_JOBS = {{ (run.jobs if run else []) | tojson }};
+  window.CURRENT_RUN_ID = "{{ run_id }}";
+  
+  document.addEventListener("DOMContentLoaded", function () {
+    const jobs = window.CURRENT_RUN_JOBS;
+    const runId = window.CURRENT_RUN_ID;
+    
+    const searchInput = document.getElementById("jobSearchInput");
+    const chips = document.querySelectorAll(".filter-chip");
+    const visibleCount = document.getElementById("visibleJobCount");
+    const rows = document.querySelectorAll(".job-item-row");
+    
+    // Drawer elements
+    const backdrop = document.getElementById("drawerBackdrop");
+    const closeBtn = document.getElementById("drawerCloseBtn");
+    const dTitle = document.getElementById("drawerTitle");
+    const dCompany = document.getElementById("drawerCompany");
+    const dPortal = document.getElementById("drawerPortalBtn");
+    const dDownload = document.getElementById("drawerDownloadBtn");
+    const dRec = document.getElementById("drawerRecommendation");
+    const dKeywords = document.getElementById("drawerKeywords");
+    const dCoverText = document.getElementById("drawerCoverNoteText");
+    const dScreening = document.getElementById("drawerScreeningAnswers");
+    const copyCoverBtn = document.getElementById("copyDrawerCoverBtn");
+    const coverTabs = document.querySelectorAll("#coverNoteTabs .tab-btn");
+    const statusSelect = document.getElementById("drawerStatusSelect");
+    const statusSaveBtn = document.getElementById("drawerStatusSaveBtn");
+    const statusMsg = document.getElementById("drawerStatusMsg");
 
-{% macro job_row(job, idx) %}
-{% set score = job.match_score or 0 %}
-{% set sfg, sbg = seniority_badge_colors(job.seniority_fit or "") %}
-{% set ifg, ibg = industry_badge_colors(job.industry_fit or "") %}
-<tr>
-  <td><a href="/runs/{{ run.run_id }}/jobs/{{ idx }}">{{ job.title }}</a>{% if job.live is defined and job.live == false %} <span class="pill pill-bad" title="Link may be closed — verify before applying">⚠</span>{% endif %}</td>
-  <td>{% if job.target_company %}<span title="On your target-company list">⭐</span> {% endif %}{{ job.company }}</td>
-  <td><span class="badge" style="color:{{ score_color(score) }};background:{{ score_bg(score) }};">{{ score }}%</span></td>
-  <td>{% if job.reviewer_score is not none %}{{ job.reviewer_score }}%{% else %}—{% endif %}</td>
-  <td><span class="badge" style="color:{{ sfg }};background:{{ sbg }};">{{ job.seniority_fit or "—" }}</span></td>
-  <td><span class="badge" style="color:{{ ifg }};background:{{ ibg }};">{{ industry_label(job.industry_fit) or "—" }}</span></td>
-  <td>{{ "Yes" if job.qualifying else "No" }}</td>
-  <td>{{ "Yes" if job.optimized else "No" }}</td>
-  <td>{% if job.quality_warnings %}<span class="pill pill-bad" title="{{ job.quality_warnings|join('; ') }}">⚠ {{ job.quality_warnings|length }}</span>{% else %}—{% endif %}</td>
-  <td>{% if job.ghost_flagged %}<span class="pill pill-bad" title="{{ job.ghost_reason }}">👻 Ghost</span>{% elif job.off_target_skipped %}<span class="pill pill-bad" title="Not a target PM/Delivery/Producer role">🎯 Off-target</span>{% else %}—{% endif %}</td>
-</tr>
-{% endmacro %}
+    let currentJob = null;
+    let currentJobIdx = -1;
+    let activeFilter = "all";
 
-{% set table_head %}
-<thead>
-  <tr>
-    <th>Title</th>
-    <th>Company</th>
-    <th>Score</th>
-    <th>Reviewer</th>
-    <th>Seniority</th>
-    <th>Industry</th>
-    <th>Qualifying</th>
-    <th>Optimized</th>
-    <th>QC</th>
-    <th>Ghost</th>
-  </tr>
-</thead>
-{% endset %}
+    // 1. Interactive Filtering
+    function applyFilters() {
+      const q = (searchInput ? searchInput.value : "").trim().toLowerCase();
+      let shown = 0;
 
-{% set has_secondary_track = run.jobs|selectattr("resume_track", "defined")|selectattr("resume_track", "equalto", "secondary")|list|length > 0 %}
-{% if has_secondary_track %}
-<h2>Primary Matches — Primary Resume <span class="meta-line">(target location, non-QA)</span></h2>
-<table class="data-table">
-  {{ table_head }}
-  <tbody>
-    {% for job in run.jobs %}{% if job.is_target_location|default(true) and not job.is_qa_role|default(false) and job.resume_track != "secondary" %}{{ job_row(job, loop.index0) }}{% endif %}{% endfor %}
-  </tbody>
-</table>
+      rows.forEach(row => {
+        const title = row.dataset.title || "";
+        const comp = row.dataset.company || "";
+        const score = parseInt(row.dataset.score || "0", 10);
+        const isQualifying = row.dataset.qualifying === "true";
+        const isRemote = row.dataset.remote === "true";
+        const isTargetCo = row.dataset.targetCo === "true";
 
-<h2>Primary Matches — Secondary Resume <span class="meta-line">(target location, non-QA)</span></h2>
-<table class="data-table">
-  {{ table_head }}
-  <tbody>
-    {% for job in run.jobs %}{% if job.is_target_location|default(true) and not job.is_qa_role|default(false) and job.resume_track == "secondary" %}{{ job_row(job, loop.index0) }}{% endif %}{% endfor %}
-  </tbody>
-</table>
-{% else %}
-<h2>Primary Matches <span class="meta-line">(target location, non-QA)</span></h2>
-<table class="data-table">
-  {{ table_head }}
-  <tbody>
-    {% for job in run.jobs %}{% if job.is_target_location|default(true) and not job.is_qa_role|default(false) %}{{ job_row(job, loop.index0) }}{% endif %}{% endfor %}
-  </tbody>
-</table>
-{% endif %}
+        let matchesSearch = !q || title.includes(q) || comp.includes(q);
+        let matchesChip = true;
 
-<h2>Outside Target Location</h2>
-<table class="data-table">
-  {{ table_head }}
-  <tbody>
-    {% for job in run.jobs %}{% if not job.is_target_location|default(true) and not job.is_qa_role|default(false) %}{{ job_row(job, loop.index0) }}{% endif %}{% endfor %}
-  </tbody>
-</table>
+        if (activeFilter === "90") matchesChip = score >= 90;
+        else if (activeFilter === "80") matchesChip = score >= 80;
+        else if (activeFilter === "qualifying") matchesChip = isQualifying;
+        else if (activeFilter === "remote") matchesChip = isRemote;
+        else if (activeFilter === "target_co") matchesChip = isTargetCo;
 
-<h2>QA / Testing Roles</h2>
-<table class="data-table">
-  {{ table_head }}
-  <tbody>
-    {% for job in run.jobs %}{% if job.is_qa_role|default(false) %}{{ job_row(job, loop.index0) }}{% endif %}{% endfor %}
-  </tbody>
-</table>
-{% endif %}
+        if (matchesSearch && matchesChip) {
+          row.style.display = "";
+          shown++;
+        } else {
+          row.style.display = "none";
+        }
+      });
+
+      if (visibleCount) visibleCount.textContent = shown + " matches visible";
+    }
+
+    if (searchInput) searchInput.addEventListener("input", applyFilters);
+
+    chips.forEach(chip => {
+      chip.addEventListener("click", () => {
+        chips.forEach(c => c.classList.remove("active"));
+        chip.classList.add("active");
+        activeFilter = chip.dataset.filter;
+        applyFilters();
+      });
+    });
+
+    // Keyboard shortcut '/' to search
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "/" && document.activeElement !== searchInput) {
+        e.preventDefault();
+        searchInput.focus();
+      }
+      if (e.key === "Escape" && backdrop.classList.contains("open")) {
+        closeDrawer();
+      }
+    });
+
+    // 2. Slide-Over Drawer
+    function openDrawer(idx) {
+      currentJobIdx = idx;
+      currentJob = jobs[idx];
+      if (!currentJob) return;
+
+      dTitle.textContent = currentJob.title || "Job Title";
+      dCompany.innerHTML = `<strong>${currentJob.company || "Company"}</strong> &bull; ${currentJob.location || "Location"} &bull; <span class="badge badge-neutral">${currentJob.match_score || 0}% Match</span>`;
+      
+      dPortal.href = currentJob.apply_url || "#";
+      dDownload.href = `/downloads/${runId}/${idx}/review`;
+
+      dRec.textContent = currentJob.recommendation || "No specific recommendation notes available.";
+
+      // Render keyword pills
+      dKeywords.innerHTML = "";
+      (currentJob.matched_keywords || []).slice(0, 8).forEach(k => {
+        dKeywords.innerHTML += `<span class="pill pill-good">${k}</span>`;
+      });
+      (currentJob.missing_keywords || []).slice(0, 6).forEach(k => {
+        dKeywords.innerHTML += `<span class="pill pill-bad">${k}</span>`;
+      });
+
+      // Cover note variants
+      renderCoverNote("domain");
+
+      // Screening answers
+      dScreening.innerHTML = "";
+      const answers = currentJob.screening_answers || [];
+      if (answers.length > 0) {
+        answers.forEach((qa, qidx) => {
+          dScreening.innerHTML += `
+            <div class="copyable-box" style="padding: 8px 12px; font-size: 12.5px;">
+              <strong style="color: var(--ink-muted);">${qa.question}</strong>
+              <div style="margin-top: 4px; color: var(--ink);">${qa.answer}</div>
+              <button type="button" class="copy-mini-btn" data-copy-val="${encodeURIComponent(qa.answer)}">Copy</button>
+            </div>
+          `;
+        });
+      } else {
+        dScreening.innerHTML = `<p class="text-muted" style="font-size: 12px;">Standard application answers pre-compiled.</p>`;
+      }
+
+      // Add copy listeners for screening answers
+      dScreening.querySelectorAll(".copy-mini-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const val = decodeURIComponent(btn.dataset.copyVal || "");
+          navigator.clipboard.writeText(val).then(() => {
+            btn.textContent = "Copied!";
+            setTimeout(() => { btn.textContent = "Copy"; }, 1500);
+          });
+        });
+      });
+
+      backdrop.classList.add("open");
+    }
+
+    function closeDrawer() {
+      backdrop.classList.remove("open");
+    }
+
+    function renderCoverNote(angle) {
+      if (!currentJob) return;
+      let text = currentJob.cover_note || "";
+      if (currentJob.cover_note_variants && currentJob.cover_note_variants.length > 0) {
+        const found = currentJob.cover_note_variants.find(v => (v.angle || "").toLowerCase().includes(angle));
+        if (found) text = found.text;
+        else text = currentJob.cover_note_variants[0].text;
+      }
+      dCoverText.textContent = text || "No cover note available for this position.";
+    }
+
+    coverTabs.forEach(tab => {
+      tab.addEventListener("click", () => {
+        coverTabs.forEach(t => t.classList.remove("active"));
+        tab.classList.add("active");
+        renderCoverNote(tab.dataset.angle);
+      });
+    });
+
+    if (copyCoverBtn) {
+      copyCoverBtn.addEventListener("click", () => {
+        navigator.clipboard.writeText(dCoverText.textContent).then(() => {
+          copyCoverBtn.textContent = "Copied! ✓";
+          setTimeout(() => { copyCoverBtn.textContent = "Copy"; }, 1500);
+        });
+      });
+    }
+
+    if (closeBtn) closeBtn.addEventListener("click", closeDrawer);
+    if (backdrop) {
+      backdrop.addEventListener("click", (e) => {
+        if (e.target === backdrop) closeDrawer();
+      });
+    }
+
+    // Attach row open clicks
+    document.querySelectorAll(".open-drawer-btn, .open-drawer-link").forEach(el => {
+      el.addEventListener("click", (e) => {
+        e.preventDefault();
+        const idx = parseInt(el.dataset.index, 10);
+        openDrawer(idx);
+      });
+    });
+
+    // Status save
+    if (statusSaveBtn) {
+      statusSaveBtn.addEventListener("click", async () => {
+        if (currentJobIdx < 0) return;
+        const newStatus = statusSelect.value;
+        statusMsg.textContent = "Saving...";
+        try {
+          const res = await fetch("/api/tracker/status", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ run_id: runId, job_index: currentJobIdx, status: newStatus })
+          });
+          if (res.ok) {
+            statusMsg.textContent = "Saved to tracker! ✓";
+            setTimeout(() => { statusMsg.textContent = ""; }, 2000);
+          } else {
+            statusMsg.textContent = "Save failed.";
+          }
+        } catch (e) {
+          statusMsg.textContent = "Network error.";
+        }
+      });
+    }
+
+  });
+</script>
 {% endblock %}

@@ -1,54 +1,539 @@
 {% extends "base.html" %}
-{% block title %}Home — Job Search Dashboard{% endblock %}
+{% block title %}Job Scout — AI Job Match & Fast-Apply Platform{% endblock %}
 {% block content %}
-<h1>Overview</h1>
 
-<div class="cards">
-  <div class="card">
-    <div class="card-value">{{ stats.total_runs }}</div>
-    <div class="card-label">Total runs</div>
+<!-- Hero: Open For All Instant Job Matcher -->
+<div class="hero-section motion-fade-up">
+  <div class="hero-badge motion-fade-up">
+    <span class="sparkle-icon">✨</span>
+    <span>Autonomous Multi-Track Intelligence</span>
   </div>
-  <div class="card">
-    <div class="card-value">{{ stats.total_jobs_scraped }}</div>
-    <div class="card-label">Jobs scraped</div>
+  
+  <div class="hero-header motion-fade-up motion-stagger-1">
+    <h1>Find Your Next Role with Total Transparency</h1>
+    <p class="hero-subtitle">
+      Paste your CV to instantly scout active openings across LinkedIn, Remotive, and direct employer ATS boards. 
+      Get 0–100% fit scores, honest gap explanations, and tailored Fast-Apply packs with direct 1-click links to job portals.
+    </p>
   </div>
-  <div class="card">
-    <div class="card-value">{{ stats.total_jobs_qualifying }}</div>
-    <div class="card-label">Jobs qualifying (&ge;60%)</div>
+
+  <div class="matcher-card spotlight-card motion-fade-up motion-stagger-2">
+    <form id="instantMatchForm">
+      <!-- Primary Resume (Track 1) Section -->
+      <div class="form-group">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <label for="resumeText" style="margin-bottom: 0;"><strong>Primary Résumé / CV (Track 1)</strong></label>
+          <div style="display: flex; gap: 6px;">
+            <button type="button" id="uploadPrimaryBtn" class="btn btn-secondary btn-small" title="Upload PDF or Word Document from device">📂 Upload File (.pdf, .docx)</button>
+            <button type="button" id="cloudPrimaryBtn" class="btn btn-secondary btn-small" title="Import from Google Drive / Dropbox / Public URL">☁️ Cloud Link</button>
+            <button type="button" id="toggleSecondaryResumeBtn" class="btn btn-outline btn-small">+ Add Secondary Resume (Track 2)</button>
+          </div>
+        </div>
+
+        <input type="file" id="primaryFileInput" accept=".pdf,.docx,.txt,.md" style="display: none;">
+
+        <!-- Cloud Import Row (Hidden by default) -->
+        <div id="primaryCloudRow" style="display: none; margin-bottom: 8px;">
+          <div style="display: flex; gap: 8px;">
+            <input type="text" id="primaryCloudUrl" placeholder="Paste Google Drive share link, Dropbox link, or public PDF/DOCX URL..." style="flex: 1; padding: 6px 10px; font-size: 12.5px;">
+            <button type="button" id="primaryCloudFetchBtn" class="btn btn-primary btn-small">Fetch</button>
+          </div>
+        </div>
+
+        <!-- File Chip / Status Indicator -->
+        <div id="primaryFileStatus" class="pill-row" style="display: none; margin-bottom: 6px;">
+          <span class="pill pill-good" id="primaryFileBadge">📄 File parsed successfully</span>
+        </div>
+
+        <textarea id="resumeText" name="resume_text" rows="7" placeholder="Paste your primary résumé text here, or click 'Upload File' / drag & drop a .pdf/.docx file directly onto this box..." required></textarea>
+      </div>
+
+      <!-- Secondary Resume (Track 2) Section -->
+      <div class="form-group" id="secondaryResumeGroup" style="display: none;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <label for="resumeSecondaryText" style="margin-bottom: 0;"><strong>Secondary Résumé / CV (Track 2)</strong> <span class="text-muted">(Alternative specialization / Track 2)</span></label>
+          <div style="display: flex; gap: 6px;">
+            <button type="button" id="uploadSecondaryBtn" class="btn btn-secondary btn-small">📂 Upload File</button>
+            <button type="button" id="cloudSecondaryBtn" class="btn btn-secondary btn-small">☁️ Cloud Link</button>
+          </div>
+        </div>
+
+        <input type="file" id="secondaryFileInput" accept=".pdf,.docx,.txt,.md" style="display: none;">
+
+        <!-- Secondary Cloud Import Row -->
+        <div id="secondaryCloudRow" style="display: none; margin-bottom: 8px;">
+          <div style="display: flex; gap: 8px;">
+            <input type="text" id="secondaryCloudUrl" placeholder="Paste Google Drive or Dropbox link for secondary CV..." style="flex: 1; padding: 6px 10px; font-size: 12.5px;">
+            <button type="button" id="secondaryCloudFetchBtn" class="btn btn-primary btn-small">Fetch</button>
+          </div>
+        </div>
+
+        <!-- Secondary File Chip -->
+        <div id="secondaryFileStatus" class="pill-row" style="display: none; margin-bottom: 6px;">
+          <span class="pill pill-good" id="secondaryFileBadge">📄 File parsed successfully</span>
+        </div>
+
+        <textarea id="resumeSecondaryText" name="resume_secondary_text" rows="6" placeholder="Paste or upload your secondary resume track here..."></textarea>
+      </div>
+
+      <!-- AI Career Divergence Pathways Section -->
+      <div id="pathwaysContainer" class="pathways-container motion-fade-up" style="display: none; margin: 20px 0;">
+        <div class="pathways-header">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="pathway-icon">🧭</span>
+            <div>
+              <h3 style="margin: 0; font-size: 15px; font-weight: 600;">Discovered Career Divergence Pathways</h3>
+              <p class="text-muted" style="margin: 2px 0 0; font-size: 12px;">We deconstructed your background into 3 strategic career tracks. Select which tracks to target:</p>
+            </div>
+          </div>
+          <button type="button" id="reanalyzePathwaysBtn" class="btn btn-secondary btn-small" style="font-size: 11.5px;">🔄 Refresh Paths</button>
+        </div>
+
+        <div id="pathwaysGrid" class="pathways-grid">
+          <!-- Dynamically populated via instant_match.js -->
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group col" style="flex: 1;">
+          <label for="targetName">Your Name <span class="text-muted">(Optional — auto-extracted)</span></label>
+          <input type="text" id="targetName" name="name" placeholder="e.g. Malini Sharma">
+        </div>
+        <div class="form-group col" style="flex: 1.2;">
+          <label for="targetTitle">Target Role Title <span class="text-muted">(Optional — auto-extracted)</span></label>
+          <input type="text" id="targetTitle" name="title" placeholder="e.g. Senior Product Manager / Backend Engineer">
+        </div>
+        <div class="form-group col" style="flex: 1.2;">
+          <label for="targetLocation">Target City / Country <span class="text-muted">(Optional)</span></label>
+          <input type="text" id="targetLocation" name="location" placeholder="e.g. London, UK / Bangalore, India / Remote">
+          <div style="display: flex; gap: 5px; flex-wrap: wrap; margin-top: 6px;">
+            <button type="button" class="btn-copy home-loc-tag" data-loc="Remote">📍 Remote</button>
+            <button type="button" class="btn-copy home-loc-tag" data-loc="Bangalore, India">📍 Bangalore</button>
+            <button type="button" class="btn-copy home-loc-tag" data-loc="Pune, India">📍 Pune</button>
+            <button type="button" class="btn-copy home-loc-tag" data-loc="Mumbai, India">📍 Mumbai</button>
+            <button type="button" class="btn-copy home-loc-tag" data-loc="San Francisco, CA">📍 San Francisco</button>
+            <button type="button" class="btn-copy home-loc-tag" data-loc="New York, NY">📍 New York</button>
+            <button type="button" class="btn-copy home-loc-tag" data-loc="London, UK">📍 London</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-checkboxes">
+        <label class="checkbox-label">
+          <input type="checkbox" id="remoteOnly" name="remote_only">
+          <span>Include Remote / Worldwide positions</span>
+        </label>
+      </div>
+
+      <div class="form-actions">
+        <button type="submit" id="startMatchBtn" class="btn btn-primary btn-large btn-shimmer">
+          <span>⚡</span> Find Matches & Generate Fast-Apply Packs
+        </button>
+      </div>
+    </form>
+
+    <!-- Live Telemetry Stream (shown during matching) -->
+    <div id="progressContainer" class="progress-container" style="display: none;">
+      <div class="progress-header">
+        <div class="progress-title-area">
+          <div class="pulsing-dot"></div>
+          <span id="progressStage" class="progress-stage-text">Connecting to Live Scout Engine...</span>
+        </div>
+        <span id="progressPct" class="progress-pct">0%</span>
+      </div>
+      <div class="progress-bar-bg">
+        <div id="progressBar" class="progress-bar-fill" style="width: 5%;"></div>
+      </div>
+      <p id="progressMessage" class="progress-message">Reading candidate background and verifying ground-truth metrics...</p>
+    </div>
   </div>
 </div>
 
-{% if stats.total_runs == 0 %}
-<p class="empty-state">No runs yet — trigger one from the <a href="/trigger">Trigger</a> page, or wait for the next scheduled GitHub Actions run.</p>
-{% else %}
-<div class="charts">
-  <div class="chart-box">
-    <h2>Score distribution</h2>
-    <canvas id="scoreChart"></canvas>
+<!-- Candidate Application Workflow & Pipeline Tracker -->
+<div class="section-header motion-fade-up motion-stagger-2" style="margin-top: 48px; display: flex; justify-content: space-between; align-items: baseline;">
+  <div>
+    <h2 style="font-size: 18px; margin-bottom: 2px;">Application Pipeline & Candidate Cockpit</h2>
+    <span class="text-muted" style="font-size: 13px;">Live status across your application lifecycle &bull; Click any card to jump to that stage on the CRM board</span>
   </div>
-  <div class="chart-box">
-    <h2>Qualifying jobs over time</h2>
-    <canvas id="timeChart"></canvas>
+  <a href="/kanban" class="btn btn-outline btn-small" style="font-size: 12px;">Open Full CRM Board &rarr;</a>
+</div>
+
+<div class="cards motion-fade-up motion-stagger-3" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
+  <!-- Card 1: Qualifying Opportunities -->
+  <a href="/kanban?status=qualifying" class="card spotlight-card kpi-workflow-card" style="text-decoration: none; color: inherit; display: block; border-top: 2px solid var(--accent-primary);">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+      <div class="card-value" style="color: var(--accent-primary-light);" data-counter="{{ tracker_kpis.qualifying }}">{{ tracker_kpis.qualifying }}</div>
+      <span style="font-size: 18px;">🎯</span>
+    </div>
+    <div class="card-label" style="font-weight: 600; color: var(--text-primary);">Qualifying Matches</div>
+    <div style="font-size: 11.5px; color: var(--text-muted); margin-top: 4px;">Discovered &ge;60% &bull; Review &rarr;</div>
+  </a>
+
+  <!-- Card 2: Resumes Ready -->
+  <a href="/kanban?status=optimized" class="card spotlight-card kpi-workflow-card" style="text-decoration: none; color: inherit; display: block; border-top: 2px solid var(--accent-cyan);">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+      <div class="card-value" style="color: var(--accent-cyan-fg);" data-counter="{{ tracker_kpis.optimized }}">{{ tracker_kpis.optimized }}</div>
+      <span style="font-size: 18px;">📄</span>
+    </div>
+    <div class="card-label" style="font-weight: 600; color: var(--text-primary);">Tailored Résumés Ready</div>
+    <div style="font-size: 11.5px; color: var(--text-muted); margin-top: 4px;">Optimized Packs &bull; Apply &rarr;</div>
+  </a>
+
+  <!-- Card 3: Submitted / In-Flight -->
+  <a href="/kanban?status=applied" class="card spotlight-card kpi-workflow-card" style="text-decoration: none; color: inherit; display: block; border-top: 2px solid var(--accent-success);">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+      <div class="card-value" style="color: var(--accent-success-fg);" data-counter="{{ tracker_kpis.applied }}">{{ tracker_kpis.applied }}</div>
+      <span style="font-size: 18px;">🚀</span>
+    </div>
+    <div class="card-label" style="font-weight: 600; color: var(--text-primary);">Applications In-Flight</div>
+    <div style="font-size: 11.5px; color: var(--text-muted); margin-top: 4px;">Submitted via ATS &bull; Track &rarr;</div>
+  </a>
+
+  <!-- Card 4: Interviewing & Offers -->
+  <a href="/kanban?status=interview_scheduled" class="card spotlight-card kpi-workflow-card" style="text-decoration: none; color: inherit; display: block; border-top: 2px solid var(--accent-warning);">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+      <div class="card-value" style="color: var(--accent-warning-fg);" data-counter="{{ tracker_kpis.interviewing + tracker_kpis.offers }}">{{ tracker_kpis.interviewing + tracker_kpis.offers }}</div>
+      <span style="font-size: 18px;">💼</span>
+    </div>
+    <div class="card-label" style="font-weight: 600; color: var(--text-primary);">Interviews & Offers</div>
+    <div style="font-size: 11.5px; color: var(--text-muted); margin-top: 4px;">Active Pipeline &bull; Manage &rarr;</div>
+  </a>
+</div>
+
+{% if recent_jobs %}
+<!-- Active Job Matches Feed (Personalized to Current Candidate Session) -->
+<div style="display: flex; justify-content: space-between; align-items: baseline; margin-top: 36px;">
+  <h2>Your Active Matches (Session: {{ active_session_id }})</h2>
+  <a href="/match/{{ active_session_id }}" class="btn btn-outline btn-small">View Full Recommendations &rarr;</a>
+</div>
+
+<!-- Interactive Filter Toolbar -->
+<div class="filter-toolbar">
+  <div class="toolbar-left">
+    <div class="search-input-wrapper">
+      <span class="search-icon">🔍</span>
+      <input type="text" id="homeJobSearchInput" placeholder="Filter by title, company, keyword (Press '/' to search)...">
+    </div>
+    <div class="filter-chips">
+      <button type="button" class="filter-chip active" data-filter="all">All ({{ recent_jobs|length }})</button>
+      <button type="button" class="filter-chip" data-filter="90">≥ 90% Match</button>
+      <button type="button" class="filter-chip" data-filter="80">≥ 80% Match</button>
+      <button type="button" class="filter-chip" data-filter="qualifying">Qualifying Only</button>
+      <button type="button" class="filter-chip" data-filter="remote">Remote</button>
+      <button type="button" class="filter-chip" data-filter="target_co">⭐ Target Co</button>
+    </div>
   </div>
-  <div class="chart-box">
-    <h2>Run source breakdown</h2>
-    <canvas id="sourceChart"></canvas>
+  <div class="toolbar-right">
+    <span class="text-muted" id="homeVisibleJobCount">{{ recent_jobs|length }} matches visible</span>
   </div>
-  <div class="chart-box">
-    <h2>Top companies (qualifying matches)</h2>
-    <canvas id="companyChart"></canvas>
+</div>
+
+<!-- Scored Matches Table -->
+<div class="recommendations-container">
+  <table class="data-table" id="homeJobsTable">
+    <thead>
+      <tr>
+        <th>Role Title</th>
+        <th>Company</th>
+        <th>Match</th>
+        <th>Seniority</th>
+        <th>Industry</th>
+        <th>Source</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for job in recent_jobs %}
+      {% set score = job.match_score or 0 %}
+      {% set sfg, sbg = seniority_badge_colors(job.seniority_fit or "") %}
+      {% set ifg, ibg = industry_badge_colors(job.industry_fit or "") %}
+      <tr class="home-job-row"
+          data-index="{{ loop.index0 }}"
+          data-title="{{ (job.title or '') | lower }}"
+          data-company="{{ (job.company or '') | lower }}"
+          data-location="{{ (job.location or '') | lower }}"
+          data-score="{{ score }}"
+          data-qualifying="{{ 'true' if job.qualifying else 'false' }}"
+          data-remote="{{ 'true' if 'remote' in (job.location or '')|lower else 'false' }}"
+          data-target-co="{{ 'true' if job.target_company else 'false' }}">
+        <td>
+          <a href="#" class="home-open-drawer-link" data-index="{{ loop.index0 }}" style="font-weight: 600;">
+            {{ job.title }}
+          </a>
+          {% if not job.is_live|default(true) %}<span class="pill pill-bad" title="Link may be inactive">⚠</span>{% endif %}
+        </td>
+        <td>
+          {% if job.target_company %}<span title="Target Company">⭐</span> {% endif %}
+          {{ job.company }}
+        </td>
+        <td>
+          <span class="badge" style="color:{{ score_color(score) }};background:{{ score_bg(score) }}; font-weight: 700;">
+            {{ score }}%
+          </span>
+        </td>
+        <td><span class="badge" style="color:{{ sfg }};background:{{ sbg }};">{{ (job.seniority_fit or "—") | title }}</span></td>
+        <td><span class="badge" style="color:{{ ifg }};background:{{ ibg }};">{{ industry_label(job.industry_fit) or "—" }}</span></td>
+        <td><span class="source-badge">{{ job.source or "ats" }}</span></td>
+        <td>
+          <button type="button" class="btn btn-outline btn-small home-open-drawer-btn" data-index="{{ loop.index0 }}">
+            ⚡ Fast Apply
+          </button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- Slide-Over Fast-Apply Sheet / Drawer -->
+<div id="homeDrawerBackdrop" class="drawer-backdrop">
+  <div class="drawer-panel" id="homeDrawerPanel">
+    <div class="drawer-header">
+      <div class="drawer-header-info">
+        <h2 id="homeDrawerTitle">Role Title</h2>
+        <div id="homeDrawerCompany" class="drawer-company">Company &bull; Location</div>
+      </div>
+      <button type="button" id="homeDrawerCloseBtn" class="drawer-close-btn" aria-label="Close drawer">&times;</button>
+    </div>
+
+    <div class="drawer-body">
+      <!-- 1-Click Fast Actions -->
+      <div class="drawer-actions-row">
+        <a id="homeDrawerPortalBtn" href="#" target="_blank" rel="noopener noreferrer" class="btn btn-primary">
+          <span>⚡</span> Open Application Portal ↗
+        </a>
+        <a id="homeDrawerDownloadBtn" href="#" class="btn btn-secondary">
+          <span>📄</span> Download Tailored Resume
+        </a>
+      </div>
+
+      <!-- Match Score & Fit Explanation -->
+      <div>
+        <div class="drawer-section-title">AI Match Evaluation</div>
+        <p id="homeDrawerRecommendation" style="font-size: 13.5px; line-height: 1.5; color: var(--ink); margin-bottom: 10px;"></p>
+        <div id="homeDrawerKeywords" class="keywords-row"></div>
+      </div>
+
+      <!-- Tailored Cover Note Studio (Angle Switcher) -->
+      <div>
+        <div class="drawer-section-title">Tailored Cover Note (1-Click Copy)</div>
+        <div class="tabs-header" id="homeCoverNoteTabs">
+          <button type="button" class="tab-btn active" data-angle="domain">Domain-Fit Angle</button>
+          <button type="button" class="tab-btn" data-angle="track">Track-Record Angle</button>
+          <button type="button" class="tab-btn" data-angle="growth">Growth Angle</button>
+        </div>
+        <div class="copyable-box">
+          <button type="button" class="copy-mini-btn" id="homeCopyDrawerCoverBtn">Copy</button>
+          <div id="homeDrawerCoverNoteText">Loading tailored note...</div>
+        </div>
+      </div>
+
+      <!-- Quick Screening Answers -->
+      <div id="homeDrawerScreeningSection">
+        <div class="drawer-section-title">Pre-Filled Screening Answers</div>
+        <div id="homeDrawerScreeningAnswers" style="display: flex; flex-direction: column; gap: 8px;"></div>
+      </div>
+    </div>
   </div>
 </div>
 {% endif %}
+
+{% if stats.total_runs > 0 %}
+<div class="charts" style="margin-top: 40px;">
+  <div class="chart-box">
+    <h2>Score Distribution</h2>
+    <canvas id="scoreChart"></canvas>
+  </div>
+  <div class="chart-box">
+    <h2>Qualifying Jobs Over Time</h2>
+    <canvas id="timeChart"></canvas>
+  </div>
+</div>
+{% endif %}
+
 {% endblock %}
 
 {% block scripts %}
+<script src="/static/instant_match.js"></script>
 <script>
   window.DASHBOARD_STATS = {{ stats | tojson }};
-</script>
-<script>
+  window.HOME_RECENT_JOBS = {{ (recent_jobs if recent_jobs else []) | tojson }};
+  window.HOME_LATEST_RUN_ID = "{{ latest_run.run_id if latest_run else '' }}";
+
   document.addEventListener("DOMContentLoaded", function () {
     if (window.initHomeCharts) window.initHomeCharts(window.DASHBOARD_STATS);
+    if (window.initInstantMatcher) window.initInstantMatcher();
+
+    // Home Page Fast-Apply Drawer & Filters
+    const jobs = window.HOME_RECENT_JOBS;
+    const runId = window.HOME_LATEST_RUN_ID;
+    const searchInput = document.getElementById("homeJobSearchInput");
+    const chips = document.querySelectorAll(".filter-chips .filter-chip");
+    const visibleCount = document.getElementById("homeVisibleJobCount");
+    const rows = document.querySelectorAll(".home-job-row");
+
+    const backdrop = document.getElementById("homeDrawerBackdrop");
+    const closeBtn = document.getElementById("homeDrawerCloseBtn");
+    const dTitle = document.getElementById("homeDrawerTitle");
+    const dCompany = document.getElementById("homeDrawerCompany");
+    const dPortal = document.getElementById("homeDrawerPortalBtn");
+    const dDownload = document.getElementById("homeDrawerDownloadBtn");
+    const dRec = document.getElementById("homeDrawerRecommendation");
+    const dKeywords = document.getElementById("homeDrawerKeywords");
+    const dCoverText = document.getElementById("homeDrawerCoverNoteText");
+    const dScreening = document.getElementById("homeDrawerScreeningAnswers");
+    const copyCoverBtn = document.getElementById("homeCopyDrawerCoverBtn");
+    const coverTabs = document.querySelectorAll("#homeCoverNoteTabs .tab-btn");
+
+    let currentJob = null;
+    let activeFilter = "all";
+
+    function applyHomeFilters() {
+      const q = (searchInput ? searchInput.value : "").trim().toLowerCase();
+      let shown = 0;
+
+      rows.forEach(row => {
+        const title = row.dataset.title || "";
+        const comp = row.dataset.company || "";
+        const score = parseInt(row.dataset.score || "0", 10);
+        const isQualifying = row.dataset.qualifying === "true";
+        const isRemote = row.dataset.remote === "true";
+        const isTargetCo = row.dataset.targetCo === "true";
+
+        let matchesSearch = !q || title.includes(q) || comp.includes(q);
+        let matchesChip = true;
+
+        if (activeFilter === "90") matchesChip = score >= 90;
+        else if (activeFilter === "80") matchesChip = score >= 80;
+        else if (activeFilter === "qualifying") matchesChip = isQualifying;
+        else if (activeFilter === "remote") matchesChip = isRemote;
+        else if (activeFilter === "target_co") matchesChip = isTargetCo;
+
+        if (matchesSearch && matchesChip) {
+          row.style.display = "";
+          shown++;
+        } else {
+          row.style.display = "none";
+        }
+      });
+
+      if (visibleCount) visibleCount.textContent = shown + " matches visible";
+    }
+
+    if (searchInput) searchInput.addEventListener("input", applyHomeFilters);
+
+    chips.forEach(chip => {
+      chip.addEventListener("click", () => {
+        chips.forEach(c => c.classList.remove("active"));
+        chip.classList.add("active");
+        activeFilter = chip.dataset.filter;
+        applyHomeFilters();
+      });
+    });
+
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "/" && document.activeElement !== searchInput && searchInput) {
+        e.preventDefault();
+        searchInput.focus();
+      }
+      if (e.key === "Escape" && backdrop && backdrop.classList.contains("open")) {
+        backdrop.classList.remove("open");
+      }
+    });
+
+    function openHomeDrawer(idx) {
+      currentJob = jobs[idx];
+      if (!currentJob) return;
+
+      dTitle.textContent = currentJob.title || "Job Title";
+      dCompany.innerHTML = `<strong>${currentJob.company || "Company"}</strong> &bull; ${currentJob.location || "Location"} &bull; <span class="badge badge-neutral">${currentJob.match_score || 0}% Match</span>`;
+      
+      dPortal.href = currentJob.apply_url || "#";
+      dDownload.href = `/downloads/${runId}/${idx}/review`;
+      dRec.textContent = currentJob.recommendation || "No specific recommendation notes available.";
+
+      dKeywords.innerHTML = "";
+      (currentJob.matched_keywords || []).slice(0, 8).forEach(k => {
+        dKeywords.innerHTML += `<span class="pill pill-good">${k}</span>`;
+      });
+      (currentJob.missing_keywords || []).slice(0, 6).forEach(k => {
+        dKeywords.innerHTML += `<span class="pill pill-bad">${k}</span>`;
+      });
+
+      renderCoverNote("domain");
+
+      dScreening.innerHTML = "";
+      const answers = currentJob.screening_answers || [];
+      if (answers.length > 0) {
+        answers.forEach(qa => {
+          dScreening.innerHTML += `
+            <div class="copyable-box" style="padding: 8px 12px; font-size: 12.5px;">
+              <strong style="color: var(--ink-muted);">${qa.question}</strong>
+              <div style="margin-top: 4px; color: var(--ink);">${qa.answer}</div>
+              <button type="button" class="copy-mini-btn" data-copy-val="${encodeURIComponent(qa.answer)}">Copy</button>
+            </div>
+          `;
+        });
+      } else {
+        dScreening.innerHTML = `<p class="text-muted" style="font-size: 12px;">Standard application answers pre-compiled.</p>`;
+      }
+
+      dScreening.querySelectorAll(".copy-mini-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const val = decodeURIComponent(btn.dataset.copyVal || "");
+          navigator.clipboard.writeText(val).then(() => {
+            btn.textContent = "Copied!";
+            setTimeout(() => { btn.textContent = "Copy"; }, 1500);
+          });
+        });
+      });
+
+      backdrop.classList.add("open");
+    }
+
+    function renderCoverNote(angle) {
+      if (!currentJob) return;
+      let text = currentJob.cover_note || "";
+      if (currentJob.cover_note_variants && currentJob.cover_note_variants.length > 0) {
+        const found = currentJob.cover_note_variants.find(v => (v.angle || "").toLowerCase().includes(angle));
+        if (found) text = found.text;
+        else text = currentJob.cover_note_variants[0].text;
+      }
+      dCoverText.textContent = text || "No cover note available for this position.";
+    }
+
+    coverTabs.forEach(tab => {
+      tab.addEventListener("click", () => {
+        coverTabs.forEach(t => t.classList.remove("active"));
+        tab.classList.add("active");
+        renderCoverNote(tab.dataset.angle);
+      });
+    });
+
+    if (copyCoverBtn) {
+      copyCoverBtn.addEventListener("click", () => {
+        navigator.clipboard.writeText(dCoverText.textContent).then(() => {
+          copyCoverBtn.textContent = "Copied! ✓";
+          setTimeout(() => { copyCoverBtn.textContent = "Copy"; }, 1500);
+        });
+      });
+    }
+
+    if (closeBtn) closeBtn.addEventListener("click", () => backdrop.classList.remove("open"));
+    if (backdrop) {
+      backdrop.addEventListener("click", (e) => {
+        if (e.target === backdrop) backdrop.classList.remove("open");
+      });
+    }
+
+    document.querySelectorAll(".home-open-drawer-btn, .home-open-drawer-link").forEach(el => {
+      el.addEventListener("click", (e) => {
+        e.preventDefault();
+        const idx = parseInt(el.dataset.index, 10);
+        openHomeDrawer(idx);
+      });
+    });
+
   });
 </script>
 {% endblock %}

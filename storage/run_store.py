@@ -7,6 +7,7 @@ here — no SQLite, no server-side DB — so the same history is visible whether
 run happened in an ephemeral CI container or on a local machine, at zero
 hosting cost.
 """
+from __future__ import annotations
 
 import json
 import logging
@@ -136,6 +137,14 @@ def load_run(run_id: str) -> dict | None:
     except (json.JSONDecodeError, OSError) as exc:
         logger.warning("Failed to load run snapshot %s: %s", path, exc)
         return None
+
+
+def get_latest_run() -> dict | None:
+    """Return full payload for the most recent run, or None."""
+    runs = list_runs()
+    if not runs:
+        return None
+    return load_run(runs[0]["run_id"])
 
 
 def compute_stats() -> dict:

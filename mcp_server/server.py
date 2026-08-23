@@ -8,6 +8,7 @@ pipeline's scraping/scoring/optimizing/email integrations. Runs locally over
 stdio, reading the same data/runs/*.json files the webapp dashboard reads —
 no new credentials, no hosting cost.
 """
+from __future__ import annotations
 
 from mcp.server.fastmcp import FastMCP
 

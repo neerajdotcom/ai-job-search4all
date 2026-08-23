@@ -1,62 +1,98 @@
 {% extends "base.html" %}
-{% block title %}Runs — Job Search Dashboard{% endblock %}
+{% block title %}Pipeline Runs — Job Search Dashboard{% endblock %}
 {% block content %}
-<h1>Run History</h1>
+<div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 20px; flex-wrap: wrap; gap: 12px;">
+  <div>
+    <h1>Pipeline Run History</h1>
+    <p class="text-muted" style="font-size: 13.5px;">All scheduled, batch, and instant candidate matching execution traces.</p>
+  </div>
+  <div style="display: flex; gap: 8px;">
+    <button type="button" id="purgeRunsBtn" class="btn btn-outline" style="color: var(--color-danger, #ef4444); font-size: 13px;">
+      🗑️ Purge Run History
+    </button>
+    <a href="/trigger" class="btn btn-primary">
+      <span>⚡</span> Start New Batch Run
+    </a>
+  </div>
+</div>
 
 {% if runs|length == 0 and not active_run %}
-<p class="empty-state">No runs yet.</p>
+<div class="card" style="text-align: center; padding: 40px;">
+  <p class="text-muted">No historical runs recorded yet.</p>
+  <a href="/" class="btn btn-outline" style="margin-top: 12px;">Go to Matcher</a>
+</div>
 {% else %}
-<table class="data-table" data-runs-table>
-  <thead>
-    <tr>
-      <th>Run ID</th>
-      <th>Started</th>
-      <th>Source</th>
-      <th>Mode</th>
-      <th>Scraped</th>
-      <th>Scored</th>
-      <th>Qualifying</th>
-      <th>Email sent</th>
-      <th>Errors</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% if active_run %}
-    <tr id="inProgressRow" class="in-progress">
-      <td>{{ active_run.run_id }}</td>
-      <td>{{ active_run.started_at }}</td>
-      <td><span class="badge badge-neutral">webapp</span></td>
-      <td>{{ "Dry run" if active_run.dry_run else "Live" }}</td>
-      <td colspan="5">
-        <span class="badge badge-neutral">In progress</span>
-        <span id="inProgressStatus">{{ active_run.stage }}{% if active_run.total %} {{ active_run.current }}/{{ active_run.total }}{% endif %}</span>
-      </td>
-    </tr>
-    {% endif %}
-    {% for run in runs %}
-    <tr>
-      <td><a href="/runs/{{ run.run_id }}">{{ run.run_id }}</a></td>
-      <td>{{ run.started_at }}</td>
-      <td><span class="badge badge-neutral">{{ run.source }}</span></td>
-      <td>{{ "Dry run" if run.dry_run else "Live" }}</td>
-      <td>{{ run.total_scraped }}</td>
-      <td>{{ run.total_scored }}</td>
-      <td>{{ run.total_qualifying }}</td>
-      <td>{{ "Yes" if run.email_sent else "No" }}</td>
-      <td>{{ run.error_count }}</td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+<div class="recommendations-container">
+  <table class="data-table" data-runs-table>
+    <thead>
+      <tr>
+        <th>Run ID</th>
+        <th>Started</th>
+        <th>Source</th>
+        <th>Mode</th>
+        <th>Scraped</th>
+        <th>Scored</th>
+        <th>Qualifying</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if active_run %}
+      <tr id="inProgressRow" style="background: var(--accent-primary-subtle);">
+        <td><strong>{{ active_run.run_id }}</strong></td>
+        <td>{{ active_run.started_at }}</td>
+        <td><span class="source-badge">webapp</span></td>
+        <td><span class="badge badge-neutral">{{ "Dry run" if active_run.dry_run else "Live" }}</span></td>
+        <td colspan="4">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <div class="pulsing-dot"></div>
+            <span id="inProgressStatus" style="font-family: var(--font-mono); font-size: 12px; color: var(--accent-primary);">
+              {{ active_run.stage }}{% if active_run.total %} &bull; {{ active_run.current }}/{{ active_run.total }}{% endif %}
+            </span>
+          </div>
+        </td>
+      </tr>
+      {% endif %}
+      {% for run in runs %}
+      <tr>
+        <td>
+          <a href="/runs/{{ run.run_id }}" style="font-family: var(--font-mono); font-weight: 600;">
+            {{ run.run_id }}
+          </a>
+        </td>
+        <td>{{ run.started_at }}</td>
+        <td><span class="source-badge">{{ run.source }}</span></td>
+        <td><span class="badge badge-neutral">{{ "Dry run" if run.dry_run else "Live" }}</span></td>
+        <td><span style="font-family: var(--font-mono);">{{ run.total_scraped }}</span></td>
+        <td><span style="font-family: var(--font-mono);">{{ run.total_scored }}</span></td>
+        <td>
+          <span class="badge" style="color: var(--accent-success-fg); background: var(--accent-success-subtle); border: 1px solid var(--accent-success-border); font-family: var(--font-mono);">
+            {{ run.total_qualifying }}
+          </span>
+        </td>
+        <td>
+          {% if run.error_count > 0 %}
+          <span class="pill pill-bad">⚠ {{ run.error_count }}</span>
+          {% else %}
+          <span class="pill pill-good">✓ Success</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
 
-<div class="pagination">
-  {% if page > 1 %}
-  <a href="/runs?page={{ page - 1 }}&page_size={{ page_size }}">&larr; Previous</a>
-  {% endif %}
-  <span>Page {{ page }} of {{ total_pages }} ({{ total }} run{{ "s" if total != 1 else "" }})</span>
-  {% if page < total_pages %}
-  <a href="/runs?page={{ page + 1 }}&page_size={{ page_size }}">Next &rarr;</a>
-  {% endif %}
+<div class="filter-toolbar" style="margin-top: 18px; justify-content: center;">
+  <div style="display: flex; gap: 12px; align-items: center; font-size: 13px;">
+    {% if page > 1 %}
+    <a href="/runs?page={{ page - 1 }}&page_size={{ page_size }}" class="btn btn-outline btn-small">&larr; Previous</a>
+    {% endif %}
+    <span class="text-muted">Page {{ page }} of {{ total_pages }} ({{ total }} total runs)</span>
+    {% if page < total_pages %}
+    <a href="/runs?page={{ page + 1 }}&page_size={{ page_size }}" class="btn btn-outline btn-small">Next &rarr;</a>
+    {% endif %}
+  </div>
 </div>
 {% endif %}
 {% endblock %}
@@ -65,6 +101,33 @@
 <script>
   document.addEventListener("DOMContentLoaded", function () {
     if (window.initRunsPage) window.initRunsPage();
+
+    const purgeBtn = document.getElementById("purgeRunsBtn");
+    if (purgeBtn) {
+      purgeBtn.addEventListener("click", function () {
+        if (!confirm("Are you sure you want to purge all historical run traces? This cannot be undone.")) return;
+        purgeBtn.disabled = true;
+        fetch("/api/admin/purge-data", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ target: "runs" }),
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (data.ok) {
+              if (window.showToast) window.showToast("Run history purged!", "success");
+              setTimeout(function () { window.location.reload(); }, 400);
+            } else {
+              purgeBtn.disabled = false;
+              if (window.showToast) window.showToast(data.error || "Failed to purge runs", "error");
+            }
+          })
+          .catch(function () {
+            purgeBtn.disabled = false;
+            if (window.showToast) window.showToast("Network error purging runs.", "error");
+          });
+      });
+    }
   });
 </script>
 {% endblock %}

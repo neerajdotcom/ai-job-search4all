@@ -1,31 +1,81 @@
 {% extends "base.html" %}
-{% block title %}Trigger — Job Search Dashboard{% endblock %}
+{% block title %}Scout Batch — Job Search Dashboard{% endblock %}
 {% block content %}
-<h1>Trigger a Run</h1>
+<div style="margin-bottom: 24px;">
+  <h1>Scout Batch Pipeline</h1>
+  <p class="text-muted" style="font-size: 13.5px;">Trigger a comprehensive multi-source scrape across LinkedIn, Remotive, and employer ATS boards.</p>
+</div>
 
-<form id="triggerForm" class="trigger-form">
-  <label>
-    <input type="checkbox" id="dryRunCheckbox" checked>
-    Dry run (no email, no DOCX writes)
-  </label>
-  <label class="resume-label">
-    Resume path
-    <input type="text" id="resumePathInput" value="{{ default_resume }}">
-  </label>
-  <label>
-    <input type="checkbox" id="enableCrawl4aiCheckbox">
-    Enable crawl4ai web-board scraping (Naukri/Indeed/Foundit/Instahyre/Wellfound — local/residential IP only)
-  </label>
-  <button type="submit" id="triggerBtn">Start run</button>
-</form>
+<div class="matcher-card spotlight-card motion-fade-up" style="max-width: 680px;">
+  <form id="triggerForm">
+    <!-- Primary Resume Reference with Upload -->
+    <div class="form-group" style="margin-bottom: 20px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+        <label for="resumePathInput" style="margin-bottom: 0;"><strong>Primary Resume Reference (.docx, .pdf, or .txt)</strong></label>
+        <button type="button" id="uploadPrimaryBtn" class="btn-copy" style="padding: 4px 10px; font-size: 12px; display: inline-flex; align-items: center; gap: 5px;">
+          <span>📁</span> Upload Primary File
+        </button>
+        <input type="file" id="primaryFileInput" accept=".docx,.pdf,.txt" style="display: none;">
+      </div>
+      <div style="display: flex; gap: 8px;">
+        <input type="text" id="resumePathInput" value="{{ default_resume }}" placeholder="Path to primary candidate profile (e.g. candidate_profile/resume.docx)" style="flex: 1;">
+      </div>
+      <div id="primaryUploadBadge" style="display: none; margin-top: 6px; font-size: 12px; color: var(--accent-success-fg); font-family: var(--font-mono);">
+        <span class="badge badge-success" style="font-size: 11px;">✓ Uploaded</span> <span id="primaryUploadedName"></span>
+      </div>
+    </div>
 
-<div id="triggerMessage" class="trigger-message"></div>
+    <!-- Secondary Resume Reference with Upload -->
+    <div class="form-group" style="margin-bottom: 20px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+        <label for="resumeSecondaryPathInput" style="margin-bottom: 0;"><strong>Secondary Resume Reference (Optional Track 2)</strong></label>
+        <button type="button" id="uploadSecondaryBtn" class="btn-copy" style="padding: 4px 10px; font-size: 12px; display: inline-flex; align-items: center; gap: 5px;">
+          <span>📁</span> Upload Secondary File
+        </button>
+        <input type="file" id="secondaryFileInput" accept=".docx,.pdf,.txt" style="display: none;">
+      </div>
+      <div style="display: flex; gap: 8px;">
+        <input type="text" id="resumeSecondaryPathInput" placeholder="Optional path to secondary resume track (e.g. data/resume_secondary.docx)" style="flex: 1;">
+      </div>
+      <div id="secondaryUploadBadge" style="display: none; margin-top: 6px; font-size: 12px; color: var(--accent-success-fg); font-family: var(--font-mono);">
+        <span class="badge badge-success" style="font-size: 11px;">✓ Uploaded</span> <span id="secondaryUploadedName"></span>
+      </div>
+    </div>
 
-<div id="statusPanel" class="status-panel" hidden>
-  <h2>Run progress</h2>
-  <div id="statusStage" class="status-stage">idle</div>
-  <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
-  <div id="statusDetail" class="status-detail"></div>
+    <div class="form-checkboxes">
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <label class="checkbox-label">
+          <input type="checkbox" id="dryRunCheckbox" checked>
+          <span><strong>Dry run mode</strong> (Score & report without overwriting local DOCX files or sending email digests)</span>
+        </label>
+        <label class="checkbox-label">
+          <input type="checkbox" id="enableCrawl4aiCheckbox">
+          <span><strong>Extended Web Scraping</strong> (Naukri, Foundit, Instahyre, Wellfound via local session)</span>
+        </label>
+      </div>
+    </div>
+
+    <div class="form-actions" style="margin-top: 20px;">
+      <button type="submit" id="triggerBtn" class="btn btn-primary btn-large">
+        <span>⚡</span> Start Full Pipeline Run
+      </button>
+    </div>
+  </form>
+
+  <div id="triggerMessage" class="trigger-message" style="margin-top: 14px;"></div>
+
+  <div id="statusPanel" class="progress-container" style="margin-top: 20px;" hidden>
+    <div class="progress-header">
+      <div class="progress-title-area">
+        <div class="pulsing-dot"></div>
+        <span id="statusStage" class="progress-stage-text">Connecting...</span>
+      </div>
+    </div>
+    <div class="progress-bar-bg">
+      <div id="progressFill" class="progress-bar-fill" style="width: 5%;"></div>
+    </div>
+    <div id="statusDetail" class="progress-message" style="margin-top: 8px;"></div>
+  </div>
 </div>
 {% endblock %}
 

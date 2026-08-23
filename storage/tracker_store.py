@@ -16,9 +16,12 @@ the cross-run dedup gate that stops that waste, and doubles as a lightweight
 application-status tracker (new → scored → qualifying → applied →
 rejected/closed) the dashboard can update by hand.
 """
+from __future__ import annotations
 
+import hashlib
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -50,6 +53,14 @@ VALID_STATUSES = AUTO_STATUSES | MANUAL_STATUSES
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def get_resume_hash(resume_text: str) -> str:
+    """Generate a deterministic 16-character fingerprint for a candidate's resume text."""
+    if not resume_text:
+        return "default"
+    clean_text = "".join(resume_text.lower().split())
+    return hashlib.sha256(clean_text.encode("utf-8")).hexdigest()[:16]
 
 
 def entry_key(job: dict) -> str:
@@ -101,27 +112,44 @@ def _is_recent(iso_str: str, ttl_days: int) -> bool:
     return (_now() - when).days < ttl_days
 
 
-def filter_unscored(jobs: list[dict], tracker: dict | None = None,
-                    rescore_after_days: int = RESCORE_TTL_DAYS) -> list[dict]:
-    """Drop jobs already scored within the last `rescore_after_days` so they
-    don't re-spend a Groq scoring slot. A posting we've never seen, or one
-    last scored longer ago than the TTL, is kept for (re)scoring."""
+def filter_unscored(
+    jobs: list[dict],
+    tracker: dict | None = None,
+    rescore_after_days: int = RESCORE_TTL_DAYS,
+    resume_text: str = "",
+) -> list[dict]:
+    """
+    Drop jobs already scored within the last `rescore_after_days` or permanently
+    disqualified for this candidate's resume so they don't re-spend scoring slots.
+    """
     if tracker is None:
         tracker = load_tracker()
 
+    resume_hash = get_resume_hash(resume_text) if resume_text else ""
     kept: list[dict] = []
     skipped = 0
+
     for job in jobs:
         key = entry_key(job)
         entry = tracker.get(key) if key else None
-        if entry and _is_recent(entry.get("last_scored", ""), rescore_after_days):
-            skipped += 1
-            continue
+        if entry:
+            # 1. Skip previously disqualified jobs for this resume
+            is_disqualified = entry.get("disqualified", False)
+            seen_hashes = entry.get("resume_hashes", [])
+            if is_disqualified and (not resume_hash or not seen_hashes or resume_hash in seen_hashes):
+                skipped += 1
+                continue
+
+            # 2. Skip recent evaluations within TTL
+            if _is_recent(entry.get("last_scored", ""), rescore_after_days):
+                skipped += 1
+                continue
+
         kept.append(job)
 
     if skipped:
         logger.info(
-            "Cross-run dedup: skipped %d job(s) already scored within %d days, "
+            "Cross-run dedup: skipped %d job(s) (disqualified or already scored within %d days), "
             "%d remain for scoring", skipped, rescore_after_days, len(kept),
         )
     return kept
@@ -138,7 +166,7 @@ def _is_quota_exhausted_fallback(job: dict) -> bool:
     return _QUOTA_EXHAUSTED_MARKER in (job.get("recommendation") or "").lower()
 
 
-def mark_seen(jobs: list[dict], tracker: dict | None = None) -> dict:
+def mark_seen(jobs: list[dict], tracker: dict | None = None, resume_text: str = "") -> dict:
     """Record/refresh tracker entries for every scored job, then persist.
     Never downgrades a user-set status (applied/rejected/etc.) back to an
     automatic one — only the auto statuses are advanced here.
@@ -150,7 +178,9 @@ def mark_seen(jobs: list[dict], tracker: dict | None = None) -> dict:
     if tracker is None:
         tracker = load_tracker()
 
+    resume_hash = get_resume_hash(resume_text) if resume_text else ""
     now_iso = _now().isoformat()
+
     for job in jobs:
         key = entry_key(job)
         if not key:
@@ -162,6 +192,10 @@ def mark_seen(jobs: list[dict], tracker: dict | None = None) -> dict:
         entry.setdefault("notes", "")
         entry.setdefault("follow_up_date", "")
         entry.setdefault("status_history", [])
+        entry.setdefault("resume_hashes", [])
+        if resume_hash and resume_hash not in entry["resume_hashes"]:
+            entry["resume_hashes"].append(resume_hash)
+
         entry["last_seen"] = now_iso
         entry["title"] = job.get("title", entry.get("title", ""))
         entry["company"] = job.get("company", entry.get("company", ""))
@@ -173,14 +207,20 @@ def mark_seen(jobs: list[dict], tracker: dict | None = None) -> dict:
             tracker[key] = entry
             continue
 
+        score = job.get("match_score", 0)
+        is_ghost = bool(job.get("ghost_flagged", False))
+        is_off_target = bool(job.get("off_target_skipped", False))
+        is_qualifying = bool(job.get("qualifying", score >= 60))
+
         entry["last_scored"] = now_iso
-        entry["last_score"] = job.get("match_score", entry.get("last_score"))
+        entry["last_score"] = score
         entry["industry_fit"] = job.get("industry_fit", entry.get("industry_fit", ""))
         entry["seniority_fit"] = job.get("seniority_fit", entry.get("seniority_fit", ""))
         entry["missing_keywords"] = job.get("missing_keywords", entry.get("missing_keywords", []))
-        entry["ghost_flagged"] = bool(job.get("ghost_flagged", False))
-        entry["ghost_reason"] = job.get("ghost_reason", "") if job.get("ghost_flagged") else ""
-        entry["off_target_skipped"] = bool(job.get("off_target_skipped", False))
+        entry["ghost_flagged"] = is_ghost
+        entry["ghost_reason"] = job.get("ghost_reason", "") if is_ghost else ""
+        entry["off_target_skipped"] = is_off_target
+        entry["disqualified"] = (score < 60 or is_ghost or is_off_target or not is_qualifying)
         if job.get("chosen_archetype"):
             entry["chosen_archetype"] = job["chosen_archetype"]
         else:

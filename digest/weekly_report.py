@@ -8,6 +8,7 @@ skill gaps (digest.presentation.compute_skill_gaps). Written to
 data/weekly_report_<date>.md (git-committed, like data/runs/ and
 data/tracker.json) and surfaced in the Friday digest email.
 """
+from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from pathlib import Path

@@ -1,0 +1,425 @@
+{% extends "base.html" %}
+{% block title %}Recommendations for {{ results.profile.name if results and results.profile else "Candidate" }} — Job Scout{% endblock %}
+{% block content %}
+
+{% if not results or not results.matches %}
+<div class="matcher-card" style="text-align: center; padding: 48px 24px;">
+  <h2>No Matches Found</h2>
+  <p class="text-muted" style="margin-bottom: 20px;">We scanned active job boards but didn't find high-overlap positions matching your query right now.</p>
+  <a href="/" class="btn btn-primary">Start New Search</a>
+</div>
+{% else %}
+
+<!-- Profile & Session Header -->
+<div class="results-header-card motion-fade-up" style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; padding-bottom: 18px; border-bottom: 1px solid var(--border-default);">
+  <div class="results-header-left">
+    <h1>{{ results.profile.name }}</h1>
+    <p class="profile-subtitle" style="font-size: 14px; color: var(--text-secondary); margin: 4px 0 10px;">
+      <strong>{{ results.profile.title }}</strong> &bull; {{ results.profile.years_experience }} yrs exp &bull; {{ results.profile.location }}
+    </p>
+    <div class="search-tags" style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+      <span class="text-muted" style="font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;">Keywords:</span>
+      {% for term in results.profile.search_terms[:4] %}
+      <span class="badge badge-neutral" style="font-family: var(--font-mono); font-size: 11.5px;">{{ term }}</span>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="form-actions" style="display: flex; gap: 8px;">
+    <button id="openShareModalBtn" class="btn btn-secondary btn-shimmer">
+      <span>✉️</span> Email Digest
+    </button>
+    <a href="/" class="btn btn-outline">&larr; New Search</a>
+  </div>
+</div>
+
+<!-- Match Summary KPI Cards -->
+<div class="cards motion-fade-up motion-stagger-1" id="kpiCards">
+  <div class="card spotlight-card">
+    <div id="kpiQualifyingMatches" class="card-value" style="color: var(--accent-success-fg);" data-counter="{{ results.total_matches }}">{{ results.total_matches }}</div>
+    <div class="card-label">Qualifying Matches (&ge;55%)</div>
+  </div>
+  <div class="card spotlight-card">
+    <div class="card-value" data-counter="{{ results.total_scraped }}">{{ results.total_scraped }}</div>
+    <div class="card-label">Live Postings Scanned</div>
+  </div>
+  <div class="card spotlight-card">
+    <div id="kpiAvgScore" class="card-value" style="color: var(--accent-primary);">
+      {% set scores = results.matches | map(attribute='match_score') | list %}
+      {{ (scores | sum / scores | length) | round | int if scores else 0 }}%
+    </div>
+    <div class="card-label">Average Match Score</div>
+  </div>
+</div>
+
+<!-- Discovered Career Pathways Summary (if available) -->
+{% if results.pathways %}
+<div class="pathways-summary-section" style="margin-bottom: 28px;">
+  <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+    <h3 style="margin: 0; font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px;">
+      <span>🧭</span> Discovered Career Divergence Tracks
+    </h3>
+    <span class="text-muted" style="font-size: 12px;">Click <strong>Active / Ignored</strong> on any track to exclude its jobs from this run</span>
+  </div>
+
+  <div class="pathways-grid">
+    {% for pw in results.pathways %}
+    <div class="pathway-card active" id="pathway_card_{{ pw.id }}" data-track-id="{{ pw.id }}">
+      <div class="pathway-card-top">
+        <div>
+          <span class="pathway-badge-pill role-{{ pw.role_type }}">{{ pw.track_label }}</span>
+          <h4 class="pathway-title">{{ pw.title }}</h4>
+        </div>
+        <div class="pathway-card-controls">
+          <button type="button" class="btn-track-toggle btn-track-active" data-track-id="{{ pw.id }}" onclick="toggleTrackStatus('{{ pw.id }}', this)" title="Click to ignore this track and remove its jobs from this run">
+            <span class="track-toggle-icon">✓</span> <span class="track-toggle-label">Active</span>
+          </button>
+          <div class="pathway-potential-meter">
+            <div class="potential-val">{{ pw.potential_score }}%</div>
+            <div class="potential-sub">Potential</div>
+          </div>
+        </div>
+      </div>
+      <p class="pathway-tagline">{{ pw.tagline }}</p>
+      <div class="pathway-cos">
+        {% for co in pw.target_companies[:3] %}
+        <span class="co-chip">{{ co }}</span>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<!-- Recommendations List -->
+<div class="recommendations-container">
+  <div class="recommendations-header-row">
+    <div>
+      <h2 style="margin: 0; font-size: 20px; font-weight: 700; color: var(--text-primary);">Recommended Openings</h2>
+      <p class="text-muted" style="margin: 3px 0 0; font-size: 13px;">Ranked dynamically across your selected career divergence pathways</p>
+    </div>
+    
+    <!-- Segmented Track Filter Toolbar -->
+    <div class="track-filter-toolbar" id="trackFilterToolbar">
+      <button type="button" class="track-filter-pill active" data-track-filter="all">
+        All Active Tracks ({{ results.matches|length }})
+      </button>
+      {% if results.pathways %}
+        {% for pw in results.pathways %}
+        {% set track_count = results.matches | selectattr('track_id', 'equalto', pw.id) | list | length %}
+        <button type="button" class="track-filter-pill" data-track-filter="{{ pw.id }}">
+          {{ pw.track_label.split(':')[0] }}: {{ pw.title }} ({{ track_count }})
+        </button>
+        {% endfor %}
+      {% endif %}
+    </div>
+  </div>
+
+  <div id="emptyFilteredState" class="matcher-card" style="display: none; text-align: center; padding: 40px 20px; margin: 20px 0;">
+    <div style="font-size: 32px; margin-bottom: 8px;">🧭</div>
+    <h3 style="margin-bottom: 6px; font-size: 17px;">All Matches in Ignored Tracks Hidden</h3>
+    <p class="text-muted" style="margin-bottom: 18px; font-size: 13px;">You have ignored all career pathways for this run. Click 'Active' on any track above to restore its recommendations.</p>
+    <button type="button" class="btn btn-secondary" onclick="restoreAllTracks()">
+      <span>🔄</span> Restore All Career Tracks
+    </button>
+  </div>
+
+  {% for job in results.matches %}
+  {% set job_idx = loop.index %}
+  <div class="match-card" data-track-id="{{ job.track_id or 'track_a' }}">
+    <div class="match-card-header">
+      <div class="match-card-title-group">
+        <div class="match-card-title-row">
+          <h3 class="job-title">{{ job.title }}</h3>
+          {% if job.track_label %}
+          <span class="badge badge-track badge-track-{{ job.track_role_type or 'core' }}">
+            {{ job.track_label.split(':')[0] }}: {{ job.track_title or job.track_label }}
+            <button type="button" class="btn-quick-ignore-track" onclick="event.stopPropagation(); toggleTrackStatus('{{ job.track_id or 'track_a' }}');" title="Ignore {{ job.track_label.split(':')[0] }} and hide its jobs">✕</button>
+          </span>
+          {% endif %}
+        </div>
+        <div class="company-location">
+          <span class="company-name">{{ job.company }}</span>
+          <span class="dot-separator">&bull;</span>
+          <span class="location-text">📍 {{ job.location }}</span>
+          <span class="source-badge">{{ job.source | upper }}</span>
+          {% if job.target_company %}
+          <span class="badge badge-target-co">⭐ Target Company</span>
+          {% endif %}
+          {% if not job.is_live %}
+          <span class="badge badge-inactive">⚠ Link may be inactive</span>
+          {% endif %}
+        </div>
+      </div>
+      <div class="match-score-wrapper">
+        <div class="match-score-pill score-tier-{{ 'high' if job.match_score >= 85 else ('mid' if job.match_score >= 65 else 'low') }}">
+          <span class="score-number">{{ job.match_score }}%</span>
+          <span class="score-label">MATCH</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Match Metadata Badges -->
+    <div class="meta-pill-row">
+      <span class="badge badge-meta">
+        🎯 Seniority: <strong style="color: var(--text-primary); margin-left: 3px;">{{ job.seniority_fit | title }}</strong>
+      </span>
+      <span class="badge badge-meta">
+        🏢 Industry: <strong style="color: var(--text-primary); margin-left: 3px;">{{ industry_label(job.industry_fit, None) }}</strong>
+      </span>
+      {% if job.grounding_score is defined %}
+      <span class="badge badge-meta badge-grounded" title="Grounded against verified facts with zero fabricated metrics">
+        🛡️ Grounded ({{ (job.grounding_score * 100) | int }}%)
+      </span>
+      {% endif %}
+    </div>
+
+    <!-- AI Reasoning Callout Box -->
+    <div class="recommendation-callout">
+      <span class="callout-icon">💡</span>
+      <p class="recommendation-text">{{ job.recommendation }}</p>
+    </div>
+
+    <!-- Keyword Cloud -->
+    <div class="keywords-row">
+      {% if job.matched_keywords %}
+      <div class="kw-group">
+        <span class="kw-label">MATCHED SKILLS</span>
+        <div class="kw-tags-list">
+          {% for kw in job.matched_keywords[:7] %}
+          <span class="kw-tag matched">✓ {{ kw }}</span>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+      {% if job.missing_keywords %}
+      <div class="kw-group">
+        <span class="kw-label">ADDITIONAL GAPS</span>
+        <div class="kw-tags-list">
+          {% for kw in job.missing_keywords[:5] %}
+          <span class="kw-tag missing">+ {{ kw }}</span>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- Card Action Buttons -->
+    <div class="match-card-actions">
+      <div class="actions-left">
+        <a href="{{ job.apply_url | safe_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-apply">
+          Apply on Career Portal ↗
+        </a>
+        <a href="https://www.google.com/search?q={{ (job.company + ' ' + job.title + ' jobs') | urlencode }}" target="_blank" rel="noopener noreferrer" class="btn btn-outline" style="font-size: 12.5px; padding: 7px 12px; text-decoration: none;" title="Search live open listings for this role">
+          🔍 Search Live Postings ↗
+        </a>
+        {% if job.tailored_pack %}
+        <button type="button" class="btn btn-secondary toggle-pack-btn" data-job-id="drawer_{{ job_idx }}">
+          ⚡ Fast-Apply Pack ▾
+        </button>
+        <a href="/api/resume/download-pdf/{{ session_id }}/{{ job_idx }}" class="btn btn-outline" style="font-size: 12.5px; padding: 7px 14px; text-decoration: none;" title="Download tailored ATS-compliant PDF">
+          📥 Download Tailored PDF
+        </a>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Fast Apply Collapsible Drawer -->
+    {% if job.tailored_pack %}
+    <div id="drawer_{{ job_idx }}" class="fast-apply-drawer" style="display: none;">
+      <div class="drawer-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+        <div>
+          <h4>⚡ Fast-Apply Application Pack for {{ job.company }}</h4>
+          <span class="text-muted" style="font-size: 11.5px;">Grounded strictly in verified CV facts</span>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <a href="/api/resume/download-pdf/{{ session_id }}/{{ job_idx }}" class="btn btn-primary btn-small" style="font-size: 12px; padding: 5px 12px; text-decoration: none;">
+            📥 Download .PDF
+          </a>
+          <a href="/api/resume/download/{{ session_id }}/{{ job_idx }}" class="btn btn-outline btn-small" style="font-size: 12px; padding: 5px 12px; text-decoration: none;">
+            📥 Download .DOCX
+          </a>
+          <a href="/resume/preview/{{ session_id }}/{{ job_idx }}" target="_blank" class="btn btn-secondary btn-small" style="font-size: 12px; padding: 5px 12px; text-decoration: none;">
+            👁️ Preview
+          </a>
+        </div>
+      </div>
+
+      <!-- Tailored Summary -->
+      {% if job.tailored_pack.optimized_summary %}
+      <div class="drawer-section">
+        <div class="section-header-row">
+          <strong style="font-size: 12.5px;">Tailored Summary</strong>
+          <button class="btn-copy" onclick="copyText('summary_{{ loop.index }}', this)">📋 Copy</button>
+        </div>
+        <div id="summary_{{ loop.index }}" class="copy-box">{{ job.tailored_pack.optimized_summary }}</div>
+      </div>
+      {% endif %}
+
+      <!-- Cover Note Variants -->
+      {% if job.tailored_pack.cover_note_variants %}
+      <div class="drawer-section">
+        <strong style="font-size: 12.5px; display: block; margin-bottom: 8px;">Cover Note Drafts</strong>
+        {% for variant in job.tailored_pack.cover_note_variants %}
+        <div class="variant-box">
+          <div class="section-header-row">
+            <span class="variant-tag">{{ variant.angle | title }} Angle</span>
+            <button class="btn-copy" onclick="copyText('var_{{ job_idx }}_{{ loop.index }}', this)">📋 Copy</button>
+          </div>
+          <div id="var_{{ job_idx }}_{{ loop.index }}" class="copy-box">{{ variant.text }}</div>
+        </div>
+        {% endfor %}
+      </div>
+      {% elif job.tailored_pack.cover_note %}
+      <div class="drawer-section">
+        <div class="section-header-row">
+          <strong style="font-size: 12.5px;">Cover Note</strong>
+          <button class="btn-copy" onclick="copyText('cover_{{ job_idx }}', this)">📋 Copy</button>
+        </div>
+        <div id="cover_{{ job_idx }}" class="copy-box">{{ job.tailored_pack.cover_note }}</div>
+      </div>
+      {% endif %}
+
+      <!-- Screening Q&A -->
+      {% if job.tailored_pack.screening_answers %}
+      <div class="drawer-section">
+        <strong style="font-size: 12.5px; display: block; margin-bottom: 8px;">Screening Questions & Answers</strong>
+        {% for q in job.tailored_pack.screening_answers %}
+        <div style="margin-bottom: 10px;">
+          <p style="font-size: 12.5px; font-weight: 600; margin-bottom: 4px;">Q: {{ q.question }}</p>
+          <div class="section-header-row">
+            <span id="qa_{{ job_idx }}_{{ loop.index }}" class="text-muted" style="font-size: 12.5px;">{{ q.answer }}</span>
+            <button class="btn-copy" onclick="copyText('qa_{{ job_idx }}_{{ loop.index }}', this)">📋 Copy</button>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+
+<!-- Recurring Skill Gaps Card -->
+{% if results.skill_gaps %}
+<div class="card" style="margin-top: 32px;">
+  <h3>Recurring Skill Gaps in This Search</h3>
+  <p class="text-muted" style="font-size: 12.5px; margin-bottom: 12px;">Top skills requested by employers where you had partial keyword overlap:</p>
+  <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+    {% for gap in results.skill_gaps %}
+    <span class="badge" style="background: var(--surface-raised); border: 1px solid var(--border); font-family: var(--font-mono); font-size: 12px;">
+      {{ gap.skill }} <span class="text-muted">({{ gap.count }} jobs)</span>
+    </span>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<!-- Email & Share Modal Dialog -->
+<div id="shareModal" class="modal-backdrop" style="display: none;">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h3>✉️ Email Digest & Fast-Apply Packs</h3>
+      <button id="closeShareModalBtn" class="modal-close-btn">&times;</button>
+    </div>
+    <form id="shareEmailForm">
+      <input type="hidden" id="shareSessionId" value="{{ session_id }}">
+      <div class="form-group">
+        <label for="recipientEmail">Recipient Email Address</label>
+        <input type="email" id="recipientEmail" placeholder="you@example.com" required>
+      </div>
+      <div id="shareStatus" style="font-size: 12.5px; margin-bottom: 12px; display: none;"></div>
+      <div class="modal-actions">
+        <button type="button" id="cancelShareBtn" class="btn btn-outline">Cancel</button>
+        <button type="submit" id="sendShareBtn" class="btn btn-primary">Send Email Digest</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function copyText(elemId, btn) {
+    const el = document.getElementById(elemId);
+    if (!el) return;
+    const text = el.innerText || el.textContent;
+    navigator.clipboard.writeText(text).then(() => {
+      if (btn) {
+        const orig = btn.innerText;
+        btn.innerText = "✓ Copied!";
+        setTimeout(() => { btn.innerText = orig; }, 1500);
+      }
+    }).catch(err => {
+      console.error("Failed to copy", err);
+    });
+  }
+
+  document.addEventListener("DOMContentLoaded", function () {
+    document.querySelectorAll(".toggle-pack-btn").forEach(btn => {
+      btn.addEventListener("click", function () {
+        const targetId = this.getAttribute("data-job-id");
+        const drawer = document.getElementById(targetId);
+        if (drawer) {
+          const isHidden = drawer.style.display === "none";
+          drawer.style.display = isHidden ? "block" : "none";
+          this.innerText = isHidden ? "⚡ Fast-Apply Pack ▴" : "⚡ Fast-Apply Pack ▾";
+        }
+      });
+    });
+
+    const shareModal = document.getElementById("shareModal");
+    const openBtn = document.getElementById("openShareModalBtn");
+    const closeBtn = document.getElementById("closeShareModalBtn");
+    const cancelBtn = document.getElementById("cancelShareBtn");
+    const shareForm = document.getElementById("shareEmailForm");
+    const statusMsg = document.getElementById("shareStatus");
+
+    if (openBtn && shareModal) {
+      openBtn.addEventListener("click", () => { shareModal.style.display = "flex"; });
+      if (closeBtn) closeBtn.addEventListener("click", () => { shareModal.style.display = "none"; });
+      if (cancelBtn) cancelBtn.addEventListener("click", () => { shareModal.style.display = "none"; });
+
+      shareForm.addEventListener("submit", async function (e) {
+        e.preventDefault();
+        const sessionId = document.getElementById("shareSessionId").value;
+        const email = document.getElementById("recipientEmail").value;
+        const sendBtn = document.getElementById("sendShareBtn");
+
+        sendBtn.disabled = true;
+        sendBtn.innerText = "Sending...";
+        statusMsg.style.display = "none";
+
+        try {
+          const resp = await fetch("/api/match/share", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ session_id: sessionId, recipient_email: email }),
+          });
+          const data = await resp.json();
+          statusMsg.style.display = "block";
+          if (resp.ok && data.ok) {
+            statusMsg.style.color = "var(--good-fg)";
+            statusMsg.innerText = "✓ Digest sent successfully to " + email + "!";
+            setTimeout(() => { shareModal.style.display = "none"; }, 2000);
+          } else {
+            statusMsg.style.color = "var(--bad-fg)";
+            statusMsg.innerText = "Error: " + (data.error || "Failed to send email.");
+          }
+        } catch (err) {
+          statusMsg.style.display = "block";
+          statusMsg.style.color = "var(--bad-fg)";
+          statusMsg.innerText = "Error: " + err.message;
+        } finally {
+          sendBtn.disabled = false;
+          sendBtn.innerText = "Send Email Digest";
+        }
+      });
+    }
+  });
+</script>
+{% endblock %}
