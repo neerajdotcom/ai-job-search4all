@@ -145,6 +145,14 @@ def run(
     if resume_path is None:
         resume_path = profile.resume_path
 
+    # Single-user by design: warn loudly if this checkout's tracker was built
+    # for a different candidate, since mixing two people's history silently
+    # corrupts the dedup gate and the digest.
+    from storage.tracker_store import check_profile_owner
+    owner_warning = check_profile_owner(profile.name)
+    if owner_warning:
+        logger.warning("PROFILE MISMATCH: %s", owner_warning)
+
     summary = RunSummary(dry_run=dry_run)
 
     if dry_run:
@@ -511,7 +519,7 @@ def run(
     try:
         if all_scored:
             from storage.tracker_store import mark_seen, export_csv
-            mark_seen(all_scored)
+            mark_seen(all_scored, profile_name=profile.name)
             export_csv()
     except Exception as exc:
         logger.error("Failed to update cross-run tracker: %s", exc)

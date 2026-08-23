@@ -124,10 +124,15 @@ def cmd_save_run(args) -> None:
 
 
 def cmd_mark_seen(args) -> None:
-    from storage.tracker_store import mark_seen
+    from storage.tracker_store import check_profile_owner, mark_seen
+    profile = _load_profile(args)
+    warning = check_profile_owner(profile.name)
     jobs = _read_json_input(args.jobs_json)
-    tracker = mark_seen(jobs)
-    _print_json({"tracker_entries": len(tracker)})
+    tracker = mark_seen(jobs, profile_name=profile.name)
+    out = {"tracker_entries": len(tracker)}
+    if warning:
+        out["profile_mismatch_warning"] = warning
+    _print_json(out)
 
 
 def cmd_export_csv(args) -> None:
@@ -320,7 +325,9 @@ def cmd_verify(args) -> None:
         # Snapshot the *current* tracker state so we can restore it after
         # the verify run — we must not persist a fake entry to real
         # git-committed state.
+        from storage.tracker_store import tracker_owner
         pre_tracker = load_tracker()
+        pre_owner = tracker_owner()
 
         summary = RunSummary(dry_run=True)
         summary.total_scraped = len(jobs)
@@ -338,7 +345,7 @@ def cmd_verify(args) -> None:
         # remove ours so we don't create it as a side-effect.
         from storage.tracker_store import TRACKER_PATH
         if pre_tracker:
-            save_tracker(pre_tracker)
+            save_tracker(pre_tracker, profile_name=pre_owner)
         else:
             artifacts_to_clean.append(TRACKER_PATH)
         print(f"  ✓ tracker CSV: {csv_path.name}")

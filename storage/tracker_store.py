@@ -82,11 +82,51 @@ def load_tracker() -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def save_tracker(tracker: dict) -> Path:
+def save_tracker(tracker: dict, profile_name: str | None = None) -> Path:
     TRACKER_PATH.parent.mkdir(parents=True, exist_ok=True)
+    # Stamp the owning candidate when known so a later run against a different
+    # profile can detect the mismatch (see check_profile_owner). Uses the
+    # wrapped shape load_tracker already tolerates, so this stays readable by
+    # any older consumer.
+    payload = {"profile": profile_name, "entries": tracker} if profile_name else tracker
     with open(TRACKER_PATH, "w", encoding="utf-8") as f:
-        json.dump(tracker, f, indent=2, ensure_ascii=False, sort_keys=True)
+        json.dump(payload, f, indent=2, ensure_ascii=False, sort_keys=True)
     return TRACKER_PATH
+
+
+def tracker_owner() -> str | None:
+    """Candidate name stamped on the tracker file, or None if unstamped."""
+    if not TRACKER_PATH.exists():
+        return None
+    try:
+        with open(TRACKER_PATH, encoding="utf-8") as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return None
+    return data.get("profile") if isinstance(data, dict) else None
+
+
+def check_profile_owner(profile_name: str) -> str | None:
+    """Return a warning message if data/tracker.json belongs to a different
+    candidate, else None.
+
+    This pipeline is single-user by design (one profile per repo/fork). Swapping
+    candidate_profile/config.yaml inside one checkout silently mixes two
+    people's jobs into one tracker and one run history — the dedup gate then
+    skips postings the new candidate has never actually been scored against.
+    Detect it loudly rather than letting the runs cross-contaminate.
+    """
+    owner = tracker_owner()
+    if owner and profile_name and owner != profile_name:
+        return (
+            f"data/tracker.json belongs to '{owner}' but this run is for "
+            f"'{profile_name}'. This pipeline is single-user — jobs from both "
+            f"candidates will mix, and the cross-run dedup gate will skip "
+            f"postings this candidate was never scored against. Use a separate "
+            f"fork/clone per candidate, or delete data/tracker.json and "
+            f"data/runs/ before switching profiles."
+        )
+    return None
 
 
 def _is_recent(iso_str: str, ttl_days: int) -> bool:
@@ -138,7 +178,8 @@ def _is_quota_exhausted_fallback(job: dict) -> bool:
     return _QUOTA_EXHAUSTED_MARKER in (job.get("recommendation") or "").lower()
 
 
-def mark_seen(jobs: list[dict], tracker: dict | None = None) -> dict:
+def mark_seen(jobs: list[dict], tracker: dict | None = None,
+              profile_name: str | None = None) -> dict:
     """Record/refresh tracker entries for every scored job, then persist.
     Never downgrades a user-set status (applied/rejected/etc.) back to an
     automatic one — only the auto statuses are advanced here.
@@ -203,7 +244,7 @@ def mark_seen(jobs: list[dict], tracker: dict | None = None) -> dict:
             entry["status"] = new_status
         tracker[key] = entry
 
-    save_tracker(tracker)
+    save_tracker(tracker, profile_name=profile_name or tracker_owner())
     return tracker
 
 
