@@ -17,7 +17,7 @@ SEED_JOBS = [
         "title": "Localization Project Manager (Subtitling & Dubbing)",
         "company": "Netflix",
         "location": "Mumbai / Pune, India (Remote Eligible)",
-        "apply_url": "https://jobs.netflix.com/search?q=localization",
+        "apply_url": "https://jobs.netflix.com",
         "source": "ats",
         "posted_at": datetime.now(timezone.utc),
         "jd_text": """
@@ -57,23 +57,24 @@ Requirements:
         """.strip(),
     },
     {
-        "title": "Content Localization Project Manager (Subtitling & Post-Production)",
-        "company": "Deluxe Media",
-        "location": "Pune / Mumbai, India",
-        "apply_url": "https://careers.bydeluxe.com/search-jobs",
+        "title": "Localization Project Manager (Subtitling & Digital Distribution)",
+        "company": "ZOO Digital",
+        "location": "Pune / Mumbai, India (Remote / Hybrid)",
+        "apply_url": "https://www.zoodigital.com/careers",
         "source": "ats",
         "posted_at": datetime.now(timezone.utc),
         "jd_text": """
-Deluxe Media Pune is hiring a Localization Project Manager for our global digital distribution and subtitling operations.
-Responsibilities:
-- Drive project execution for feature films, episodic streaming shows, and broadcast localization across 40+ languages.
-- Coordinate subtitle creation, translation, proofreading, conform editing, and quality control.
-- Track project milestones, client deliverables, dub cards, and technical metadata.
-- Serve as the primary liaison between major Hollywood / OTT studio clients and internal production hubs.
+ZOO Digital is seeking an experienced Localization Project Manager to manage cloud-based subtitling, dubbing, and digital media delivery operations for major Hollywood studios and global OTT streaming services.
+Key Responsibilities:
+- Manage the end-to-end localization delivery lifecycle across multi-language subtitling, timed text conforming, and audio dubbing workflows.
+- Coordinate between global studio clients, internal localization production coordinators, and external translator networks.
+- Monitor deliverable milestones, dub card generation, subtitle QC sign-offs, and compliance with streaming platform packaging specs.
+- Supervise Localization Quality Assurance (LQA) workflows and resolve technical issues with timed text formats (WebVTT, IMSC1, TTML, SRT).
+- Champion cloud-based localization tools and continuous workflow efficiency improvements across distributed operations teams.
 Requirements:
-- 4+ years in Localization Project Management, Subtitling, Audio/Video Post-Production, or Translation Management.
-- Hands-on experience with subtitling software, caption formats (DFXP, WebVTT, SCC), and media delivery specifications.
-- Strong organizational ability, attention to detail, and ability to manage tight broadcast deadlines.
+- 4-8 years of experience in Localization Project Management, Subtitling Operations, or Post-Production Media Coordination.
+- In-depth knowledge of timed text standards, subtitle QC parameters (reading speeds, frame synchronization, line limits), and cloud subtitling tools.
+- Strong client relationship management, vendor coordination, and cross-functional leadership skills.
         """.strip(),
     },
     {
