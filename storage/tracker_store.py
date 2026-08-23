@@ -87,17 +87,61 @@ def load_tracker() -> dict:
     except (json.JSONDecodeError, OSError) as exc:
         logger.warning("Could not read tracker %s: %s — starting fresh", TRACKER_PATH, exc)
         return {}
-    # Tolerate either a flat map or a wrapped {"entries": {...}} shape.
-    if isinstance(data, dict) and "entries" in data and isinstance(data["entries"], dict):
-        return data["entries"]
-    return data if isinstance(data, dict) else {}
+    # Tolerate either a flat map or a wrapped {"entries": {...}} or {"jobs": {...}} shape.
+    if isinstance(data, dict):
+        if "entries" in data and isinstance(data["entries"], dict):
+            return data["entries"]
+        if "jobs" in data and isinstance(data["jobs"], dict):
+            return data["jobs"]
+        return {k: v for k, v in data.items() if isinstance(v, dict)}
+    return {}
 
 
-def save_tracker(tracker: dict) -> Path:
+def save_tracker(tracker: dict, profile_name: str | None = None) -> Path:
     TRACKER_PATH.parent.mkdir(parents=True, exist_ok=True)
+    # Stamp the owning candidate when known so a later run against a different
+    # profile can detect the mismatch (see check_profile_owner). Uses the
+    # wrapped shape load_tracker already tolerates, so this stays readable by
+    # any older consumer.
+    payload = {"profile": profile_name, "entries": tracker} if profile_name else tracker
     with open(TRACKER_PATH, "w", encoding="utf-8") as f:
-        json.dump(tracker, f, indent=2, ensure_ascii=False, sort_keys=True)
+        json.dump(payload, f, indent=2, ensure_ascii=False, sort_keys=True)
     return TRACKER_PATH
+
+
+def tracker_owner() -> str | None:
+    """Candidate name stamped on the tracker file, or None if unstamped."""
+    if not TRACKER_PATH.exists():
+        return None
+    try:
+        with open(TRACKER_PATH, encoding="utf-8") as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return None
+    return data.get("profile") if isinstance(data, dict) else None
+
+
+def check_profile_owner(profile_name: str) -> str | None:
+    """Return a warning message if data/tracker.json belongs to a different
+    candidate, else None.
+
+    This pipeline is single-user by design (one profile per repo/fork). Swapping
+    candidate_profile/config.yaml inside one checkout silently mixes two
+    people's jobs into one tracker and one run history — the dedup gate then
+    skips postings the new candidate has never actually been scored against.
+    Detect it loudly rather than letting the runs cross-contaminate.
+    """
+    owner = tracker_owner()
+    if owner and profile_name and owner != profile_name:
+        return (
+            f"data/tracker.json belongs to '{owner}' but this run is for "
+            f"'{profile_name}'. This pipeline is single-user — jobs from both "
+            f"candidates will mix, and the cross-run dedup gate will skip "
+            f"postings this candidate was never scored against. Use a separate "
+            f"fork/clone per candidate, or delete data/tracker.json and "
+            f"data/runs/ before switching profiles."
+        )
+    return None
 
 
 def _is_recent(iso_str: str, ttl_days: int) -> bool:
@@ -131,32 +175,28 @@ def filter_unscored(
 
     for job in jobs:
         key = entry_key(job)
-        entry = tracker.get(key) if key else None
-        if entry:
+        entry = tracker.get(key) if (key and isinstance(tracker, dict)) else None
+        if isinstance(entry, dict):
             # 1. Skip previously disqualified jobs for this resume
             is_disqualified = entry.get("disqualified", False)
             seen_hashes = entry.get("resume_hashes", [])
             if is_disqualified and (not resume_hash or not seen_hashes or resume_hash in seen_hashes):
                 skipped += 1
                 continue
-
-            # 2. Skip recent evaluations within TTL
-            if _is_recent(entry.get("last_scored", ""), rescore_after_days):
+            # 2. Skip jobs scored within TTL
+            last_scored = entry.get("last_scored")
+            if last_scored and _is_recent(last_scored, rescore_after_days):
                 skipped += 1
                 continue
-
         kept.append(job)
 
     if skipped:
-        logger.info(
-            "Cross-run dedup: skipped %d job(s) (disqualified or already scored within %d days), "
-            "%d remain for scoring", skipped, rescore_after_days, len(kept),
-        )
+        logger.info("Cross-run dedup: skipped %d job(s) (disqualified or already scored within %d days), %d remain for scoring",
+                    skipped, rescore_after_days, len(kept))
     return kept
 
 
-# Substring marking a fallback result from a daily-quota-exhausted short
-# circuit (see match_scorer._fallback / resume_optimizer's equivalent) — a
+# Sentinel string that match_scorer writes when the Groq daily quota is exhausted. A
 # job that hit this never actually got evaluated, so it must not be recorded
 # as "scored" or it'll be wrongly skipped by filter_unscored for the full TTL.
 _QUOTA_EXHAUSTED_MARKER = "quota exhausted"
@@ -166,7 +206,12 @@ def _is_quota_exhausted_fallback(job: dict) -> bool:
     return _QUOTA_EXHAUSTED_MARKER in (job.get("recommendation") or "").lower()
 
 
-def mark_seen(jobs: list[dict], tracker: dict | None = None, resume_text: str = "") -> dict:
+def mark_seen(
+    jobs: list[dict],
+    tracker: dict | None = None,
+    profile_name: str | None = None,
+    resume_text: str = "",
+) -> dict:
     """Record/refresh tracker entries for every scored job, then persist.
     Never downgrades a user-set status (applied/rejected/etc.) back to an
     automatic one — only the auto statuses are advanced here.
@@ -185,7 +230,9 @@ def mark_seen(jobs: list[dict], tracker: dict | None = None, resume_text: str = 
         key = entry_key(job)
         if not key:
             continue
-        entry = tracker.get(key, {})
+        entry = tracker.get(key)
+        if not isinstance(entry, dict):
+            entry = tracker[key] = {}
         entry.setdefault("first_seen", now_iso)
         entry.setdefault("resume_version", "")
         entry.setdefault("recruiter_name", "")
@@ -243,7 +290,7 @@ def mark_seen(jobs: list[dict], tracker: dict | None = None, resume_text: str = 
             entry["status"] = new_status
         tracker[key] = entry
 
-    save_tracker(tracker)
+    save_tracker(tracker, profile_name=profile_name or tracker_owner())
     return tracker
 
 
@@ -315,6 +362,8 @@ def export_csv(path: Path | None = None) -> Path:
         writer = csv.DictWriter(f, fieldnames=CSV_COLUMNS)
         writer.writeheader()
         for entry in tracker.values():
+            if not isinstance(entry, dict):
+                continue
             writer.writerow({
                 "date_discovered": entry.get("first_seen", ""),
                 "last_seen": entry.get("last_seen", ""),
@@ -362,6 +411,8 @@ def kanban_board(tracker: dict | None = None) -> dict:
     by_status: dict[str, list[dict]] = {status: [] for status, _ in KANBAN_COLUMNS}
     closed: list[dict] = []
     for key, entry in tracker.items():
+        if not isinstance(entry, dict):
+            continue
         status = entry.get("status")
         card = {**entry, "key": key}
         if status in by_status:

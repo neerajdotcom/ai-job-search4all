@@ -55,6 +55,9 @@ ASHBY_COMPANIES = {
     "joyteractive": "Joyteractive",
     "voodoo": "Voodoo",
     "moonactive": "Moon Active",
+    # Localization / language-services track (see the note above
+    # LOCALIZATION_NOTE at the bottom of this block).
+    "deepl": "DeepL",
 }
 
 # Workable: public widget API, same "official board the employer exposes for
@@ -66,6 +69,17 @@ WORKABLE_COMPANIES: dict[str, str] = {
     "evolution": "Evolution",
     "playtech": "Playtech",
     "kindred": "Kindred",
+    # Localization / media-services employers. Same "real account, 0 open
+    # postings at probe time" situation as the three above — each returned a
+    # 200 with its real display name while a nonsense control slug returned
+    # 404, so these are genuine accounts whose boards will surface roles the
+    # moment any are posted. Added for candidates whose track is OTT
+    # localization, subtitling, dubbing, or media content operations rather
+    # than (or in addition to) gaming.
+    "keywordsstudios": "Keywords Studios",
+    "iyuno": "Iyuno",
+    "transperfect": "TransPerfect",
+    "rws": "RWS",
 }
 
 # Unverified gaming/iGaming slugs to probe on a network-enabled run, then move
@@ -76,10 +90,22 @@ WORKABLE_COMPANIES: dict[str, str] = {
 # careers platform (Workday, SuccessFactors, custom) not supported by this
 # scraper, or a different slug than guessed; not worth re-guessing blindly.
 CANDIDATE_SLUGS = {
-    "greenhouse": ["zynga", "playtika", "niantic", "rovio", "sciplay", "lightandwonder"],
-    "lever": ["miniclip", "tiltingpoint", "socialpoint"],
-    "ashby": ["applovin"],
-    "workable": ["betsson", "betway", "pragmaticplay"],
+    "greenhouse": [
+        "zynga", "playtika", "niantic", "rovio", "sciplay", "lightandwonder",
+        # Localization track — all 404'd on Greenhouse under these slugs.
+        "keywordsstudios", "iyuno", "zoodigital", "rws", "transperfect",
+        "lionbridge", "welocalize",
+    ],
+    "lever": [
+        "miniclip", "tiltingpoint", "socialpoint",
+        "keywordsstudios", "iyuno", "zoodigital", "transperfect", "welocalize",
+    ],
+    "ashby": ["applovin", "keywordsstudios", "iyuno", "zoodigital"],
+    "workable": [
+        "betsson", "betway", "pragmaticplay",
+        # Rate-limited (429) at probe time rather than resolved — re-probe.
+        "welocalize", "zoodigital",
+    ],
 }
 
 
