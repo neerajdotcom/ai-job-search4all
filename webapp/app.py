@@ -363,11 +363,8 @@ def api_admin_purge_data(payload: AdminDataPurgeRequest):
             run_manager._sessions.clear()
 
         if payload.target in ["runs", "all"]:
-            from storage.run_store import RunStore
-            store = RunStore()
-            # Clear runs in store if method exists
-            if hasattr(store, "clear_all"):
-                store.clear_all()
+            from storage.run_store import clear_all_runs
+            deleted_items += clear_all_runs()
 
         if payload.target in ["traces", "all"]:
             from core.tracer import TRACES_DIR
@@ -384,7 +381,7 @@ def api_admin_purge_data(payload: AdminDataPurgeRequest):
                         out_file.unlink(missing_ok=True)
                         deleted_items += 1
 
-        return {"ok": True, "message": f"Purged {payload.target} data successfully."}
+        return {"ok": True, "message": f"Purged {payload.target} data successfully ({deleted_items} items removed)."}
     except Exception as exc:
         return JSONResponse(status_code=500, content={"ok": False, "error": str(exc)})
 

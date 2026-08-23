@@ -199,3 +199,18 @@ def compute_stats() -> dict:
         "source_breakdown": source_breakdown,
         "top_companies": top_companies,
     }
+
+
+def clear_all_runs() -> int:
+    """Delete all run snapshot files under data/runs/. Returns count deleted."""
+    if not RUNS_DIR.exists():
+        return 0
+    count = 0
+    for path in RUNS_DIR.glob("*.json"):
+        try:
+            path.unlink(missing_ok=True)
+            count += 1
+        except OSError as exc:
+            logger.warning("Failed to delete run snapshot %s: %s", path, exc)
+    return count
+
