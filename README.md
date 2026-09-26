@@ -52,6 +52,83 @@ Open **`http://127.0.0.1:8000/`** in your browser:
 
 ---
 
+## 🍴 Fork & Self-Host Setup
+
+Everything you need to run your own private instance of Job Scout — scheduled daily digests, resume tailoring, and the web dashboard — in under 10 minutes.
+
+### Step 1 — Fork the repo
+
+Click **Fork** on GitHub. All subsequent steps happen in your fork.
+
+### Step 2 — Install dependencies locally
+
+```bash
+git clone https://github.com/<your-username>/ai-job-search4all.git
+cd ai-job-search4all
+pip install -r requirements.txt
+```
+
+### Step 3 — Create your `.env` file
+
+```bash
+cp .env.example .env
+```
+
+Open `.env` and fill in your keys (all free-tier):
+
+| Variable | Where to get it |
+|---|---|
+| `GROQ_API_KEY` | [console.groq.com](https://console.groq.com/keys) → API Keys |
+| `GEMINI_API_KEY` | [aistudio.google.com](https://aistudio.google.com/app/apikey) → Get API key |
+| `ADZUNA_APP_ID` / `ADZUNA_APP_KEY` | [developer.adzuna.com](https://developer.adzuna.com/) — optional, adds more jobs |
+| `GMAIL_USER` | Your Gmail address |
+| `GMAIL_APP_PASSWORD` | [myaccount.google.com → Security → App Passwords](https://myaccount.google.com/apppasswords) — use an **App Password**, not your login password |
+| `DIGEST_RECIPIENT` | The email address that should receive the daily digest |
+
+> LinkedIn, Remotive, and ATS feeds (Greenhouse/Lever/Ashby/Workable) need **zero keys** and work out of the box.
+
+### Step 4 — Set up your candidate profile
+
+```bash
+# Auto-draft a profile from your resume (one free Gemini call):
+python setup_profile.py --resume path/to/your_resume.docx
+
+# — or copy the example and fill it in by hand:
+cp candidate_profile/config.example.yaml candidate_profile/config.yaml
+```
+
+Edit `candidate_profile/config.yaml` to confirm your name, title, years of experience, target location, and search terms. This file is gitignored and never committed.
+
+### Step 5 — Test it locally
+
+```bash
+# Dry run: scrapes, scores, optimises — no email sent, saves preview to outputs/
+python main.py --dry-run
+
+# Live run: sends a real digest to DIGEST_RECIPIENT
+python main.py
+```
+
+### Step 6 — Schedule daily runs via GitHub Actions
+
+Add the same variables from your `.env` as **repository secrets** in your fork:
+
+1. Go to **Settings → Secrets and variables → Actions → New repository secret**
+2. Add each variable: `GROQ_API_KEY`, `GEMINI_API_KEY`, `GMAIL_USER`, `GMAIL_APP_PASSWORD`, `DIGEST_RECIPIENT` (and optionally `ADZUNA_APP_ID` / `ADZUNA_APP_KEY`)
+
+The workflow `.github/workflows/job_search.yml` is already configured and will run on its cron schedule once the secrets are in place. You can also trigger it manually from **Actions → Job Search Pipeline → Run workflow**.
+
+### Step 7 — Launch the web dashboard (optional)
+
+```bash
+make app
+# or: python -m webapp
+```
+
+Open `http://127.0.0.1:8000/` — paste any résumé, pick a location, and see live matches with tailored Fast-Apply packs.
+
+---
+
 ## 💻 CLI & Batch Pipeline Modes
 
 For unattended daily runs (e.g. GitHub Actions cron or local batch execution):

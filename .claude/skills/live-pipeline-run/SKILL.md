@@ -19,7 +19,8 @@ The repo's GitHub Actions secrets have them, so a live run goes through
 
 ## Steps
 1. **Trigger** `job_search.yml` via the GitHub MCP `actions_run_trigger`
-   (`run_workflow`): `owner: neerajdotcom`, `repo: job-search-agent`,
+   (`run_workflow`): `owner: <github-username>`, `repo: <repo-name>` (use this
+   repo's own owner and name — check `git remote get-url origin` if unsure),
    `workflow_id: job_search.yml`, `ref: main` (or the branch the user names),
    `inputs: {"dry_run": "false"}`.
 2. **Find the run** with `actions_list` (`list_workflow_runs`, filter to the
